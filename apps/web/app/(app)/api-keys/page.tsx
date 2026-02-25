@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ApiKeyCreateSchema } from "@saas/shared";
-import { apiFetch, ApiError } from "@/lib/api";
+import { apiFetch, getApiErrorKind, toApiError } from "@/lib/api";
 import { useToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +22,8 @@ type ApiKey = {
   lastUsedAt?: string | null;
 };
 
+const SECRET_TTL_MS = 2 * 60 * 1000;
+
 export default function ApiKeysPage() {
   const { push } = useToast();
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -29,15 +31,32 @@ export default function ApiKeysPage() {
   const [loading, setLoading] = useState(true);
   const [newSecret, setNewSecret] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [forbidden, setForbidden] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
 
   async function loadKeys() {
     setLoading(true);
+    setForbidden(false);
+    setErrorMessage(null);
     try {
       const data = await apiFetch<ApiKey[]>("/api-keys");
       setKeys(data);
     } catch (err) {
-      const apiErr = err as ApiError;
-      push({ title: "Failed to load keys", description: apiErr.message, variant: "destructive" });
+      const apiErr = toApiError(err, "Failed to load keys");
+      const kind = getApiErrorKind(apiErr);
+      if (kind === "forbidden") {
+        setForbidden(true);
+      } else {
+        setErrorMessage(apiErr.message);
+      }
+      if (kind === "network") {
+        push({ title: "Network error", description: "Could not reach API. Retry below.", variant: "destructive" });
+      } else {
+        push({ title: "Failed to load keys", description: apiErr.message, variant: "destructive" });
+      }
     } finally {
       setLoading(false);
     }
@@ -47,13 +66,33 @@ export default function ApiKeysPage() {
     loadKeys();
   }, []);
 
+  useEffect(() => {
+    if (!newSecret) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      setNewSecret(null);
+      push({ title: "Secret cleared", description: "The one-time secret has been removed from view." });
+    }, SECRET_TTL_MS);
+    return () => window.clearTimeout(timeout);
+  }, [newSecret, push]);
+
+  useEffect(() => {
+    return () => {
+      setNewSecret(null);
+    };
+  }, []);
+
   async function createKey() {
+    setNameError(null);
     const parsed = ApiKeyCreateSchema.safeParse({ name });
     if (!parsed.success) {
-      push({ title: "Invalid name", description: "Provide a key name", variant: "destructive" });
+      setNameError(parsed.error.issues[0]?.message || "Provide a valid key name");
+      push({ title: "Invalid name", description: "Fix the highlighted field.", variant: "destructive" });
       return;
     }
 
+    setCreating(true);
     try {
       const data = await apiFetch<{ secret: string }>("/api-keys", {
         method: "POST",
@@ -61,12 +100,18 @@ export default function ApiKeysPage() {
       });
       setNewSecret(data.secret);
       setName("");
+      setNameError(null);
       setCreateOpen(false);
       push({ title: "Key created" });
       await loadKeys();
     } catch (err) {
-      const apiErr = err as ApiError;
+      const apiErr = toApiError(err, "Create failed");
+      if (apiErr.field === "name") {
+        setNameError(apiErr.message);
+      }
       push({ title: "Create failed", description: apiErr.message, variant: "destructive" });
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -75,13 +120,16 @@ export default function ApiKeysPage() {
       return;
     }
 
+    setRevokingId(id);
     try {
       await apiFetch(`/api-keys/${id}`, { method: "DELETE" });
       push({ title: "Key revoked" });
       await loadKeys();
     } catch (err) {
-      const apiErr = err as ApiError;
+      const apiErr = toApiError(err, "Revoke failed");
       push({ title: "Revoke failed", description: apiErr.message, variant: "destructive" });
+    } finally {
+      setRevokingId(null);
     }
   }
 
@@ -91,6 +139,10 @@ export default function ApiKeysPage() {
     }
     await navigator.clipboard.writeText(newSecret);
     push({ title: "Copied", description: "API key copied to clipboard." });
+  }
+
+  function clearSecret() {
+    setNewSecret(null);
   }
 
   return (
@@ -110,6 +162,9 @@ export default function ApiKeysPage() {
               <Button size="sm" onClick={copySecret}>
                 Copy secret
               </Button>
+              <Button size="sm" variant="outline" onClick={clearSecret}>
+                I stored it
+              </Button>
               <span className="text-xs text-muted-foreground">Treat this as a password.</span>
             </div>
           </AlertDescription>
@@ -119,7 +174,9 @@ export default function ApiKeysPage() {
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>Create key</CardTitle>
-          <Button onClick={() => setCreateOpen(true)}>New API key</Button>
+          <Button onClick={() => setCreateOpen(true)} disabled={forbidden}>
+            New API key
+          </Button>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">Use named keys for integrations and revoke any key instantly.</p>
@@ -132,7 +189,7 @@ export default function ApiKeysPage() {
             <CardHeader>
               <CardTitle>Create API key</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-5">
+            <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="key-name">Key name</Label>
                 <Input
@@ -141,19 +198,25 @@ export default function ApiKeysPage() {
                   onChange={(e) => {
                     const value = e.currentTarget.value;
                     setName(value);
+                    if (nameError) {
+                      setNameError(null);
+                    }
                   }}
                   placeholder="Production Integration"
                 />
+                {nameError && <p className="text-xs text-red-600">{nameError}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="key-scopes">Scopes (optional)</Label>
                 <Input id="key-scopes" value="Not supported by current API" disabled />
               </div>
-              <div className="flex justify-end gap-3">
-                <Button variant="outline" onClick={() => setCreateOpen(false)}>
+              <div className="flex justify-end gap-4">
+                <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
                   Cancel
                 </Button>
-                <Button onClick={createKey}>Create</Button>
+                <Button onClick={createKey} disabled={creating} aria-busy={creating}>
+                  {creating ? "Creating..." : "Create"}
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -171,6 +234,10 @@ export default function ApiKeysPage() {
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
+          ) : forbidden ? (
+            <EmptyState title="Permissions required" description="You do not have permission to view API keys for this organization." />
+          ) : errorMessage ? (
+            <EmptyState title="Unable to load keys" description={errorMessage} actionLabel="Retry" onAction={loadKeys} />
           ) : keys.length === 0 ? (
             <EmptyState title="No keys" description="Create a key to start making API calls." actionLabel="Create key" onAction={() => setCreateOpen(true)} />
           ) : (
@@ -186,25 +253,29 @@ export default function ApiKeysPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {keys.map((key) => (
-                  <TableRow key={key.id}>
-                    <TableCell>{key.name}</TableCell>
-                    <TableCell>{key.prefix}</TableCell>
-                    <TableCell>{new Date(key.createdAt).toLocaleDateString()}</TableCell>
-                    <TableCell>{key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : "Never"}</TableCell>
-                    <TableCell>{key.revokedAt ? "Revoked" : "Active"}</TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => revokeKey(key.id, key.name)}
-                        disabled={Boolean(key.revokedAt)}
-                      >
-                        Revoke
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {keys.map((key) => {
+                  const isRevoked = Boolean(key.revokedAt);
+                  const isRevoking = revokingId === key.id;
+                  return (
+                    <TableRow key={key.id} className={isRevoked ? "opacity-70" : undefined}>
+                      <TableCell>{key.name}</TableCell>
+                      <TableCell>{key.prefix}</TableCell>
+                      <TableCell>{new Date(key.createdAt).toLocaleDateString()}</TableCell>
+                      <TableCell>{key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : "Never"}</TableCell>
+                      <TableCell>{isRevoked ? "Revoked" : "Active"}</TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => revokeKey(key.id, key.name)}
+                          disabled={isRevoked || isRevoking}
+                        >
+                          {isRevoked ? "Revoked" : isRevoking ? "Revoking..." : "Revoke"}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

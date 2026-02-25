@@ -4,7 +4,7 @@ import { prefixFromKey, sha256 } from "../lib/crypto";
 import { AppError } from "../lib/errors";
 import { getOrgId } from "./auth";
 import crypto from "crypto";
-import { dayBucket } from "./usage";
+import { enforceRateLimit } from "./rateLimit";
 
 export async function requireApiKey(request: FastifyRequest) {
   const auth = request.headers.authorization;
@@ -36,6 +36,7 @@ export async function requireApiKey(request: FastifyRequest) {
   }
 
   request.apiKey = { id: apiKey.id, orgId: apiKey.orgId };
+  request.log = request.log.child({ orgId: apiKey.orgId, apiKeyId: apiKey.id });
 
   await prisma.apiKey.update({
     where: { id: apiKey.id },
@@ -47,18 +48,14 @@ export async function requireApiKey(request: FastifyRequest) {
 
 async function enforceApiKeyRateLimit(apiKeyId: string, orgId: string, request: FastifyRequest) {
   const limit = Number(request.server.env.API_KEY_RATE_LIMIT || 1000);
-  if (!Number.isFinite(limit) || limit <= 0) {
-    return;
-  }
-  const date = dayBucket(new Date());
-  const usage = await prisma.usageDaily.findUnique({
-    where: { orgId_metric_date: { orgId, metric: `api_key:${apiKeyId}`, date } },
+  const windowSec = Number(request.server.env.API_KEY_RATE_LIMIT_WINDOW_SEC || "60");
+  enforceRateLimit(request, {
+    scope: "api_key",
+    keyParts: [apiKeyId, orgId],
+    limit,
+    windowSec,
+    message: "API key rate limit exceeded",
   });
-
-  const used = usage?.quantity ?? 0;
-  if (used >= limit) {
-    throw new AppError("RATE_LIMIT", 429, "API key rate limit exceeded");
-  }
 }
 
 declare module "fastify" {

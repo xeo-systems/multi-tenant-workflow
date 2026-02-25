@@ -37,6 +37,7 @@ Related docs:
 - Audit logs for sensitive actions
 - Worker processing via BullMQ + Redis
 - Health endpoint (`GET /health`)
+- Readiness endpoint (`GET /ready`) for DB + Redis
 
 ## Quickstart
 Prereqs: Node 20+, pnpm, Docker.
@@ -66,12 +67,13 @@ Copy `.env.example` to `.env` and fill values.
 ### API (`apps/api`)
 - `DATABASE_URL`: Postgres connection string
 - `REDIS_URL`: Redis connection string
-- `SESSION_SECRET`: >= 16 chars; used to sign session cookies
+- `SESSION_SECRET`: >= 32 chars; used to sign session cookies
 - `API_BASE_URL`: Public API base URL
 - `WEB_BASE_URL`: Public web base URL
 - `API_PORT`: Port for Fastify
 - `COOKIE_DOMAIN`: Optional cookie domain
 - `COOKIE_SECURE`: `true` for HTTPS
+- `INTERNAL_ADMIN_TOKEN`: Bearer token for internal org summary endpoint
 - `LOG_LEVEL`: `info`, `debug`, etc
 - `SENTRY_ENABLED` + `SENTRY_DSN`: Optional Sentry
 - `STRIPE_SECRET_KEY`: Stripe secret key (test or live)
@@ -82,6 +84,11 @@ Copy `.env.example` to `.env` and fill values.
 - `STRIPE_PORTAL_RETURN_URL`: Return URL for billing portal
 - `STRIPE_WEBHOOK_TOLERANCE`: Seconds for signature timestamp tolerance
 - `API_KEY_RATE_LIMIT`: Requests per minute per API key
+
+Session/cookie security notes:
+- Session cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, and `Secure` in production.
+- `SameSite=Lax` is used to reduce CSRF risk while still allowing common same-site navigation/login flows.
+- Rotate `SESSION_SECRET` by replacing it with a new random 32+ char value and redeploying all API instances. This invalidates all existing sessions.
 
 ### Worker (`apps/worker`)
 - `DATABASE_URL`
@@ -183,6 +190,7 @@ pnpm db:migrate
 - API keys are stored as prefix + hashed secret only.
 - Stripe webhook signature verification uses the raw body + timestamp tolerance.
 - Webhooks are idempotent via `stripe_events`.
+- Internal support summary endpoint: `GET /admin/orgs/:orgId/summary` with `Authorization: Bearer $INTERNAL_ADMIN_TOKEN`.
 
 ## Demo Flow
 1. Register at `/register` to create a new org and owner user.

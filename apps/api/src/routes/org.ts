@@ -6,12 +6,26 @@ import { addMember, getOrg, listMembers, removeMember, updateMember } from "../s
 
 export async function orgRoutes(app: FastifyInstance) {
   app.get("/", { preHandler: [enforceUsageLimit, requireUser] }, async (request) => {
-    const org = await getOrg({ orgId: request.auth!.orgId, userId: request.auth!.userId });
+    const org = await getOrg({
+      orgId: request.auth!.orgId,
+      userId: request.auth!.userId,
+      role: request.auth!.role,
+      requestId: request.id,
+      ip: request.ip,
+      userAgent: readUserAgent(request.headers["user-agent"]),
+    });
     return { org, role: request.auth!.role };
   });
 
   app.get("/members", { preHandler: [enforceUsageLimit, requireUser] }, async (request) => {
-    const members = await listMembers({ orgId: request.auth!.orgId, userId: request.auth!.userId });
+    const members = await listMembers({
+      orgId: request.auth!.orgId,
+      userId: request.auth!.userId,
+      role: request.auth!.role,
+      requestId: request.id,
+      ip: request.ip,
+      userAgent: readUserAgent(request.headers["user-agent"]),
+    });
     return members.map((member: { id: string; role: string; user: { id: string; email: string }; createdAt: Date }) => ({
       id: member.id,
       role: member.role,
@@ -23,7 +37,14 @@ export async function orgRoutes(app: FastifyInstance) {
   app.post("/members", { preHandler: [enforceUsageLimit, requireUser, (req) => requireRole(req, ["OWNER", "ADMIN"]) ] }, async (request, reply) => {
     const input = MembershipInviteSchema.parse(request.body);
     const membership = await addMember(
-      { orgId: request.auth!.orgId, userId: request.auth!.userId },
+      {
+        orgId: request.auth!.orgId,
+        userId: request.auth!.userId,
+        role: request.auth!.role,
+        requestId: request.id,
+        ip: request.ip,
+        userAgent: readUserAgent(request.headers["user-agent"]),
+      },
       input.email,
       input.role
     );
@@ -36,7 +57,14 @@ export async function orgRoutes(app: FastifyInstance) {
     const input = RoleSchema.parse((request.body as { role?: string })?.role);
 
     const updated = await updateMember(
-      { orgId: request.auth!.orgId, userId: request.auth!.userId },
+      {
+        orgId: request.auth!.orgId,
+        userId: request.auth!.userId,
+        role: request.auth!.role,
+        requestId: request.id,
+        ip: request.ip,
+        userAgent: readUserAgent(request.headers["user-agent"]),
+      },
       memberId.memberId,
       input
     );
@@ -45,7 +73,24 @@ export async function orgRoutes(app: FastifyInstance) {
 
   app.delete("/members/:memberId", { preHandler: [enforceUsageLimit, requireUser, (req) => requireRole(req, ["OWNER", "ADMIN"]) ] }, async (request) => {
     const { memberId } = request.params as { memberId: string };
-    await removeMember({ orgId: request.auth!.orgId, userId: request.auth!.userId }, memberId);
+    await removeMember(
+      {
+        orgId: request.auth!.orgId,
+        userId: request.auth!.userId,
+        role: request.auth!.role,
+        requestId: request.id,
+        ip: request.ip,
+        userAgent: readUserAgent(request.headers["user-agent"]),
+      },
+      memberId
+    );
     return { ok: true };
   });
+}
+
+function readUserAgent(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+  return value;
 }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, clearStoredOrgId } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 export function UserMenu() {
@@ -15,10 +15,8 @@ export function UserMenu() {
     } catch {
       // Best effort: continue local sign-out even if API logout fails.
     } finally {
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem("orgId");
-      }
-      router.push("/login");
+      clearStoredOrgId();
+      router.replace("/login");
     }
   }
 
@@ -30,13 +28,13 @@ export function UserMenu() {
       {open && (
         <div className="absolute right-0 mt-2 w-40 rounded-md border bg-card p-2 shadow-lg">
           <button
-            className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+            className="w-full rounded-md px-4 py-2 text-left text-sm hover:bg-muted"
             onClick={() => router.push("/app/settings")}
           >
             Settings
           </button>
           <button
-            className="w-full rounded-md px-3 py-2 text-left text-sm text-red-600 hover:bg-muted"
+            className="w-full rounded-md px-4 py-2 text-left text-sm text-red-600 hover:bg-muted"
             onClick={logout}
           >
             Log out

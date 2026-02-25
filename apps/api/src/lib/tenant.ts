@@ -5,4 +5,7 @@ export type TenantContext = {
   userId?: string;
   role?: Role;
   apiKeyId?: string;
+  requestId?: string;
+  ip?: string;
+  userAgent?: string;
 };

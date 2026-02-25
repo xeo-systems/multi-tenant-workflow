@@ -12,6 +12,20 @@ export async function writeAudit(
   if (!ctx.orgId) {
     return;
   }
+  if (!ctx.userId && !ctx.apiKeyId) {
+    return;
+  }
+
+  const baseMetadata: Prisma.JsonObject = {
+    ...(isObject(metadata) ? metadata : {}),
+    requestId: ctx.requestId,
+    ip: ctx.ip,
+    userAgent: ctx.userAgent,
+  };
+  if (ctx.apiKeyId) {
+    baseMetadata["actorApiKeyId"] = ctx.apiKeyId;
+  }
+
   await prisma.auditLog.create({
     data: {
       orgId: ctx.orgId,
@@ -19,7 +33,11 @@ export async function writeAudit(
       action,
       targetType,
       targetId,
-      metadata,
+      metadata: Object.keys(baseMetadata).length > 0 ? (baseMetadata as Prisma.InputJsonValue) : undefined,
     },
   });
+}
+
+function isObject(value: Prisma.InputJsonValue | undefined): value is Prisma.JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

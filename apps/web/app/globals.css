@@ -3,17 +3,40 @@
 @tailwind utilities;
 
 :root {
-  --background: 48 33% 96%;
-  --foreground: 20 14% 12%;
+  --background: 220 23% 98%;
+  --foreground: 222 47% 11%;
   --card: 0 0% 100%;
-  --card-foreground: 20 14% 12%;
-  --muted: 30 8% 90%;
-  --muted-foreground: 25 5% 40%;
-  --primary: 220 60% 45%;
+  --card-foreground: 222 47% 11%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 220 9% 46%;
+  --text-muted: 220 9% 65%;
+  --primary: 221 83% 53%;
+  --primary-hover: 224 76% 48%;
   --primary-foreground: 0 0% 100%;
-  --border: 30 10% 85%;
-  --ring: 220 60% 45%;
-  --radius: 14px;
+  --border: 220 13% 91%;
+  --ring: 221 83% 53%;
+  --success: 142 76% 36%;
+  --warning: 32 88% 46%;
+  --error: 0 72% 50%;
+  --radius: 12px;
+}
+
+.dark {
+  --background: 222 20% 10%;
+  --foreground: 210 20% 96%;
+  --card: 222 22% 13%;
+  --card-foreground: 210 20% 96%;
+  --muted: 222 16% 20%;
+  --muted-foreground: 210 12% 72%;
+  --primary: 217 91% 60%;
+  --primary-hover: 217 91% 54%;
+  --primary-foreground: 0 0% 100%;
+  --border: 222 14% 24%;
+  --ring: 217 91% 60%;
+  --success: 142 71% 45%;
+  --warning: 36 92% 56%;
+  --error: 0 84% 60%;
+  --text-muted: 220 10% 72%;
 }
 
 * {
@@ -25,16 +48,28 @@ body {
   font-family: "Space Grotesk", system-ui, sans-serif;
 }
 
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus {
+  -webkit-text-fill-color: hsl(var(--foreground));
+  caret-color: hsl(var(--foreground));
+  box-shadow: 0 0 0px 1000px hsl(var(--background)) inset;
+  transition: background-color 600000s 0s, color 600000s 0s;
+}
+
 a {
   @apply text-foreground hover:text-primary;
 }
 
 .container-page {
-  @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  @apply mx-auto w-full max-w-[1200px] px-4 sm:px-6 lg:px-8;
 }
 
 .page-shell {
-  @apply space-y-8;
+  @apply space-y-6;
 }
 
 .page-header {
@@ -42,7 +77,7 @@ a {
 }
 
 .page-title {
-  @apply text-2xl font-semibold tracking-tight sm:text-3xl;
+  @apply text-2xl font-semibold tracking-tight text-foreground sm:text-3xl;
 }
 
 .page-description {
@@ -54,7 +89,7 @@ a {
 }
 
 .card {
-  @apply rounded-lg border bg-card p-6 shadow-sm;
+  @apply rounded-lg border border-border bg-card p-6 shadow-sm;
 }
 
 .section-title {

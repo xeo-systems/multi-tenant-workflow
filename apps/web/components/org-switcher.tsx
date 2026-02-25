@@ -3,21 +3,18 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { getStoredOrgId, setStoredOrgId } from "@/lib/api";
 
 export function OrgSwitcher() {
   const [orgId, setOrgId] = useState("");
   const [editing, setEditing] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setOrgId(window.localStorage.getItem("orgId") || "");
-    }
+    setOrgId(getStoredOrgId() || "");
   }, []);
 
   function save() {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("orgId", orgId.trim());
-    }
+    setStoredOrgId(orgId.trim());
     setEditing(false);
   }
 
@@ -32,7 +29,7 @@ export function OrgSwitcher() {
               const value = e.currentTarget.value;
               setOrgId(value);
             }}
-            className="h-9 w-44 sm:w-52"
+            className="h-10 w-48 sm:w-56"
           />
           <Button size="sm" onClick={save} aria-label="Save organization">
             Save

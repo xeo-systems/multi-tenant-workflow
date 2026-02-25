@@ -8,21 +8,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoginFormSchema } from "@/lib/validators";
-import { apiFetch, ApiError } from "@/lib/api";
+import { apiFetch, ApiError, setStoredOrgId } from "@/lib/api";
 import { useToast } from "@/lib/toast";
 
 export default function LoginPage() {
   const router = useRouter();
   const { push } = useToast();
-  const [values, setValues] = useState({ email: "", password: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
-  async function submit(event: React.FormEvent) {
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrors({});
 
-    const parsed = LoginFormSchema.safeParse(values);
+    const formData = new FormData(event.currentTarget);
+    const parsed = LoginFormSchema.safeParse({
+      email: String(formData.get("email") || ""),
+      password: String(formData.get("password") || ""),
+    });
     if (!parsed.success) {
       const nextErrors: Record<string, string> = {};
       parsed.error.issues.forEach((issue) => {
@@ -38,18 +41,19 @@ export default function LoginPage() {
       const data = await apiFetch<{ userId: string; orgId: string }>("/auth/login", {
         method: "POST",
         skipOrgHeader: true,
-        body: JSON.stringify(values),
+        body: JSON.stringify(parsed.data),
       });
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("orgId", data.orgId);
-      }
+      setStoredOrgId(data.orgId);
       push({ title: "Welcome back", description: "Login successful." });
       router.push("/app");
     } catch (err) {
       const apiErr = err as ApiError;
+      if (apiErr.field) {
+        setErrors((prev) => ({ ...prev, [apiErr.field as string]: apiErr.message }));
+      }
       push({
         title: "Login failed",
-        description: apiErr.message,
+        description: apiErr.status === 401 ? "Invalid credentials" : apiErr.message,
         variant: "destructive",
       });
     } finally {
@@ -65,17 +69,14 @@ export default function LoginPage() {
             <CardTitle>Sign in</CardTitle>
           </CardHeader>
           <CardContent>
-            <form className="space-y-4" onSubmit={submit} aria-label="Login form">
+            <form className="space-y-4" onSubmit={submit} aria-label="Login form" autoComplete="on" method="post">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
+                  name="email"
                   type="email"
-                  value={values.email}
-                  onChange={(e) => {
-                    const value = e.currentTarget.value;
-                    setValues((prev) => ({ ...prev, email: value }));
-                  }}
+                  autoComplete="email"
                   aria-invalid={Boolean(errors["email"])}
                   aria-describedby={errors["email"] ? "email-error" : undefined}
                   required
@@ -90,12 +91,9 @@ export default function LoginPage() {
                 <Label htmlFor="password">Password</Label>
                 <Input
                   id="password"
+                  name="password"
                   type="password"
-                  value={values.password}
-                  onChange={(e) => {
-                    const value = e.currentTarget.value;
-                    setValues((prev) => ({ ...prev, password: value }));
-                  }}
+                  autoComplete="current-password"
                   aria-invalid={Boolean(errors["password"])}
                   aria-describedby={errors["password"] ? "password-error" : undefined}
                   required

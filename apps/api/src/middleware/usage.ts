@@ -6,10 +6,11 @@ import { Prisma } from "@saas/db";
 const METRIC = "api_requests";
 
 export async function enforceUsageLimit(request: FastifyRequest) {
-  const orgId = request.headers["x-org-id"] as string | undefined;
-  if (!orgId) {
-    throw new AppError("BAD_REQUEST", 400, "Missing X-Org-Id header");
+  // Billable usage is measured on API-key authenticated data-plane calls only.
+  if (!request.apiKey?.id) {
+    return;
   }
+  const orgId = request.apiKey.orgId;
 
   await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`;
@@ -41,10 +42,10 @@ export async function enforceUsageLimit(request: FastifyRequest) {
 }
 
 export async function recordUsage(request: FastifyRequest, reply: { statusCode: number }, quantity = 1) {
-  const orgId = request.headers["x-org-id"] as string | undefined;
-  if (!orgId) {
+  if (!request.apiKey?.id) {
     return;
   }
+  const orgId = request.apiKey.orgId;
 
   const date = dayBucket(new Date());
 
@@ -61,7 +62,7 @@ export async function recordUsage(request: FastifyRequest, reply: { statusCode: 
       orgId,
       metric: METRIC,
       quantity,
-      apiKeyId: request.apiKey?.id,
+      apiKeyId: request.apiKey.id,
     },
   });
 
@@ -73,14 +74,12 @@ export async function recordUsage(request: FastifyRequest, reply: { statusCode: 
     });
   }
 
-  if (request.apiKey?.id) {
-    const keyMetric = `api_key:${request.apiKey.id}`;
-    await prisma.usageDaily.upsert({
-      where: { orgId_metric_date: { orgId, metric: keyMetric, date } },
-      create: { orgId, metric: keyMetric, date, quantity },
-      update: { quantity: { increment: quantity } },
-    });
-  }
+  const keyMetric = `api_key:${request.apiKey.id}`;
+  await prisma.usageDaily.upsert({
+    where: { orgId_metric_date: { orgId, metric: keyMetric, date } },
+    create: { orgId, metric: keyMetric, date, quantity },
+    update: { quantity: { increment: quantity } },
+  });
 }
 
 export function dayBucket(date: Date) {

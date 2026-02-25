@@ -42,7 +42,13 @@ const EnvSchema = z.object({
   STRIPE_PORTAL_RETURN_URL: z.string().optional().nullable(),
   STRIPE_WEBHOOK_TOLERANCE: z.string().default("300"),
   WORKER_CONCURRENCY: z.string().default("5"),
-  API_KEY_RATE_LIMIT: z.string().default("1000")
+  API_KEY_RATE_LIMIT: z.string().default("1000"),
+  API_KEY_RATE_LIMIT_WINDOW_SEC: z.string().default("60"),
+  AUTH_RATE_LIMIT_WINDOW_SEC: z.string().default("60"),
+  AUTH_LOGIN_IP_RATE_LIMIT: z.string().default("10"),
+  AUTH_LOGIN_IDENTIFIER_RATE_LIMIT: z.string().default("5"),
+  AUTH_REGISTER_IP_RATE_LIMIT: z.string().default("5"),
+  INTERNAL_ADMIN_TOKEN: z.string().optional().nullable(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -67,6 +73,9 @@ export function loadEnv(): Env {
     const missing = required.filter((key) => !env[key]);
     if (missing.length > 0) {
       throw new Error(`Missing required production env vars: ${missing.join(", ")}`);
+    }
+    if (env.SESSION_SECRET.length < 32) {
+      throw new Error("SESSION_SECRET must be at least 32 characters in production");
     }
   }
   return env;

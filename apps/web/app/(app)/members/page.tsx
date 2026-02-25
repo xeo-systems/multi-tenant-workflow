@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { MembershipInviteSchema, Role, RoleSchema } from "@saas/shared";
-import { apiFetch, ApiError } from "@/lib/api";
+import { apiFetch, ApiError, getApiErrorKind, toApiError } from "@/lib/api";
 import { useToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/empty-state";
 type Member = {
   id: string;
   role: Role;
+  createdAt?: string;
   user: { id: string; email: string };
 };
 
@@ -33,6 +34,7 @@ export default function MembersPage() {
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [viewerRole, setViewerRole] = useState<Role | null>(null);
   const [invite, setInvite] = useState({ email: "", role: "MEMBER" as Role });
+  const [inviteErrors, setInviteErrors] = useState<Record<string, string>>({});
 
   const canManage = useMemo(() => viewerRole === "OWNER" || viewerRole === "ADMIN", [viewerRole]);
 
@@ -48,8 +50,8 @@ export default function MembersPage() {
       const memberData = await apiFetch<Member[]>("/org/members");
       setMembers(memberData);
     } catch (err) {
-      const apiErr = err as ApiError;
-      if (apiErr.status === 403) {
+      const apiErr = toApiError(err, "Failed to load members");
+      if (getApiErrorKind(apiErr) === "forbidden") {
         setPermissionDenied(true);
       } else {
         setErrorMessage(apiErr.message);
@@ -64,8 +66,12 @@ export default function MembersPage() {
   }, []);
 
   function handleForbidden(apiErr: ApiError, fallbackTitle: string) {
-    if (apiErr.status === 403) {
+    if (getApiErrorKind(apiErr) === "forbidden") {
       push({ title: "Permission denied", description: "You do not have access to perform this action.", variant: "destructive" });
+      return;
+    }
+    if (getApiErrorKind(apiErr) === "network") {
+      push({ title: "Network error", description: "Could not reach API. Please retry.", variant: "destructive" });
       return;
     }
     push({ title: fallbackTitle, description: apiErr.message, variant: "destructive" });
@@ -75,10 +81,17 @@ export default function MembersPage() {
     if (!canManage) {
       return;
     }
+    setInviteErrors({});
 
     const parsed = MembershipInviteSchema.safeParse(invite);
     if (!parsed.success) {
-      push({ title: "Invalid input", description: "Enter a valid email and role.", variant: "destructive" });
+      const nextErrors: Record<string, string> = {};
+      parsed.error.issues.forEach((issue) => {
+        const key = String(issue.path[0] || "email");
+        nextErrors[key] = issue.message;
+      });
+      setInviteErrors(nextErrors);
+      push({ title: "Invalid input", description: "Fix the highlighted fields.", variant: "destructive" });
       return;
     }
 
@@ -86,9 +99,14 @@ export default function MembersPage() {
       await apiFetch("/org/members", { method: "POST", body: JSON.stringify(parsed.data) });
       push({ title: "Invite sent", description: "Member added to organization." });
       setInvite({ email: "", role: "MEMBER" });
+      setInviteErrors({});
       await loadMembers();
     } catch (err) {
-      handleForbidden(err as ApiError, "Invite failed");
+      const apiErr = toApiError(err, "Invite failed");
+      if (apiErr.field === "email") {
+        setInviteErrors((prev) => ({ ...prev, email: apiErr.message }));
+      }
+      handleForbidden(apiErr, "Invite failed");
     }
   }
 
@@ -102,7 +120,7 @@ export default function MembersPage() {
       push({ title: "Role updated" });
       await loadMembers();
     } catch (err) {
-      handleForbidden(err as ApiError, "Role update failed");
+      handleForbidden(toApiError(err, "Role update failed"), "Role update failed");
     }
   }
 
@@ -120,7 +138,7 @@ export default function MembersPage() {
       push({ title: "Member removed" });
       await loadMembers();
     } catch (err) {
-      handleForbidden(err as ApiError, "Remove failed");
+      handleForbidden(toApiError(err, "Remove failed"), "Remove failed");
     }
   }
 
@@ -157,12 +175,13 @@ export default function MembersPage() {
               }}
               disabled={!canManage || permissionDenied}
             />
+            {inviteErrors["email"] && <p className="text-xs text-red-600">{inviteErrors["email"]}</p>}
           </div>
           <div className="space-y-2">
             <Label htmlFor="invite-role">Role</Label>
             <select
               id="invite-role"
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-10 w-full rounded-md border bg-background px-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={invite.role}
               onChange={(e) => {
                 const value = RoleSchema.parse(e.currentTarget.value);
@@ -212,6 +231,7 @@ export default function MembersPage() {
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -221,7 +241,7 @@ export default function MembersPage() {
                     <TableCell>{member.user.email}</TableCell>
                     <TableCell>
                       <select
-                        className="h-9 rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="h-10 rounded-md border bg-background px-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         value={member.role}
                         onChange={(e) => {
                           const value = RoleSchema.parse(e.currentTarget.value);
@@ -238,6 +258,9 @@ export default function MembersPage() {
                       </select>
                     </TableCell>
                     <TableCell>Active</TableCell>
+                    <TableCell>
+                      {member.createdAt ? new Date(member.createdAt).toLocaleDateString() : "Not available"}
+                    </TableCell>
                     <TableCell>
                       <Button
                         variant="ghost"

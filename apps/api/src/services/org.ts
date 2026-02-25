@@ -5,6 +5,7 @@ import { writeAudit } from "./audit";
 import * as orgRepo from "../repo/orgRepo";
 import * as membershipRepo from "../repo/membershipRepo";
 import { prisma } from "../lib/prisma";
+import { requireOrgRole } from "./rbac";
 
 export async function getOrg(ctx: TenantContext) {
   const org = await orgRepo.getById(ctx.orgId);
@@ -19,6 +20,8 @@ export async function listMembers(ctx: TenantContext) {
 }
 
 export async function addMember(ctx: TenantContext, email: string, role: Role) {
+  await requireOrgRole(ctx, ["OWNER", "ADMIN"]);
+
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     throw new AppError("NOT_FOUND", 404, "User not found");
@@ -32,6 +35,8 @@ export async function addMember(ctx: TenantContext, email: string, role: Role) {
 }
 
 export async function updateMember(ctx: TenantContext, memberId: string, role: Role) {
+  await requireOrgRole(ctx, ["OWNER", "ADMIN"]);
+
   const membership = await membershipRepo.findById(ctx.orgId, memberId);
   if (!membership) {
     throw new AppError("NOT_FOUND", 404, "Membership not found");
@@ -48,6 +53,8 @@ export async function updateMember(ctx: TenantContext, memberId: string, role: R
 }
 
 export async function removeMember(ctx: TenantContext, memberId: string) {
+  await requireOrgRole(ctx, ["OWNER", "ADMIN"]);
+
   const membership = await membershipRepo.findById(ctx.orgId, memberId);
   if (!membership) {
     throw new AppError("NOT_FOUND", 404, "Membership not found");

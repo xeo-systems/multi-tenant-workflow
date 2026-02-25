@@ -1,24 +1,31 @@
 import { z } from "zod";
+import {
+  apiKeyNameSchema,
+  emailSchema,
+  loginPasswordSchema,
+  orgNameSchema,
+  passwordSchema,
+} from "./validation";
 
 export const RoleSchema = z.enum(["OWNER", "ADMIN", "MEMBER", "BILLING", "READONLY"]);
 
 export const LoginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
+  email: emailSchema,
+  password: loginPasswordSchema,
 });
 
 export const RegisterSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  orgName: z.string().min(2),
+  email: emailSchema,
+  password: passwordSchema,
+  orgName: orgNameSchema,
 });
 
 export const ApiKeyCreateSchema = z.object({
-  name: z.string().min(2).max(120),
+  name: apiKeyNameSchema,
 });
 
 export const MembershipInviteSchema = z.object({
-  email: z.string().email(),
+  email: emailSchema,
   role: RoleSchema,
 });
 
@@ -28,3 +35,4 @@ export const UsageEventSchema = z.object({
 });
 
 export type Role = z.infer<typeof RoleSchema>;
+export { emailSchema, passwordSchema, orgNameSchema, apiKeyNameSchema };

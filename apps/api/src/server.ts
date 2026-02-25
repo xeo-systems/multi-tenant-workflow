@@ -1,4 +1,6 @@
 import { buildApp } from "./app";
+import { prisma } from "./lib/prisma";
+import { closeQueues } from "./lib/queue";
 
 const app = buildApp();
 
@@ -19,6 +21,7 @@ shutdownSignals.forEach((signal) => {
     app.log.info({ signal }, "Shutting down API");
     try {
       await app.close();
+      await Promise.allSettled([prisma.$disconnect(), closeQueues()]);
       process.exit(0);
     } catch (err) {
       app.log.error({ err }, "Failed to shutdown cleanly");

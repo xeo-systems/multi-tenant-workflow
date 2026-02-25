@@ -48,4 +48,66 @@ export async function adminRoutes(app: FastifyInstance) {
     });
     return logs;
   });
+
+  app.get("/orgs/:orgId/summary", async (request) => {
+    requireInternalAdmin(request.headers.authorization, app.env.INTERNAL_ADMIN_TOKEN);
+    const { orgId } = request.params as { orgId: string };
+
+    const org = await prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { id: true, name: true, plan: true, planLimit: true },
+    });
+    if (!org) {
+      throw new AppError("NOT_FOUND", 404, "Organization not found");
+    }
+
+    const memberCount = await prisma.membership.count({ where: { orgId } });
+    const subscription = await prisma.subscription.findFirst({
+      where: { orgId },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        status: true,
+        currentPeriodStart: true,
+        currentPeriodEnd: true,
+      },
+    });
+
+    const cycleStart = subscription?.currentPeriodStart || startOfUtcDay(new Date());
+    const usage = await prisma.usageDaily.aggregate({
+      where: {
+        orgId,
+        metric: "api_requests",
+        date: { gte: startOfUtcDay(cycleStart) },
+      },
+      _sum: { quantity: true },
+    });
+
+    return {
+      org,
+      memberCount,
+      subscription: subscription || null,
+      usage: {
+        used: usage._sum.quantity ?? 0,
+        limit: org.planLimit,
+        cycleStart: startOfUtcDay(cycleStart),
+      },
+    };
+  });
+}
+
+function requireInternalAdmin(authHeader: string | string[] | undefined, expectedToken?: string | null) {
+  if (!expectedToken) {
+    throw new AppError("FORBIDDEN", 403, "Internal admin token not configured");
+  }
+
+  const header = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+  const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
+  if (!token || token !== expectedToken) {
+    throw new AppError("UNAUTHORIZED", 401, "Unauthorized");
+  }
+}
+
+function startOfUtcDay(date: Date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }

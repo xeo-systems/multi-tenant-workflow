@@ -5,6 +5,7 @@ import { AppError } from "../lib/errors";
 import { requireRole, requireUser } from "../middleware/auth";
 import { enforceUsageLimit } from "../middleware/usage";
 import { stripeQueue } from "../lib/queue";
+import { writeAudit } from "../services/audit";
 
 export async function billingRoutes(app: FastifyInstance) {
   const env = app.env;
@@ -67,6 +68,20 @@ export async function billingRoutes(app: FastifyInstance) {
       metadata: { orgId },
     });
 
+    await writeAudit(
+      {
+        orgId: orgId,
+        userId: request.auth!.userId,
+        role: request.auth!.role,
+        requestId: request.id,
+        ip: request.ip,
+        userAgent: readUserAgent(request.headers["user-agent"]),
+      },
+      "billing.checkout.initiated",
+      "organization",
+      orgId
+    );
+
     return { url: session.url };
   });
 
@@ -87,6 +102,20 @@ export async function billingRoutes(app: FastifyInstance) {
       customer: subscription.stripeCustomerId,
       return_url: env.STRIPE_PORTAL_RETURN_URL,
     });
+
+    await writeAudit(
+      {
+        orgId: request.auth!.orgId,
+        userId: request.auth!.userId,
+        role: request.auth!.role,
+        requestId: request.id,
+        ip: request.ip,
+        userAgent: readUserAgent(request.headers["user-agent"]),
+      },
+      "billing.portal.opened",
+      "subscription",
+      subscription.id
+    );
 
     return { url: session.url };
   });
@@ -140,6 +169,51 @@ export async function billingRoutes(app: FastifyInstance) {
       throw new AppError("INTERNAL", 500, "Webhook processing failed");
     }
 
+    const eventOrgId = await resolveWebhookOrgId(event);
+    const canAuditOrg = eventOrgId
+      ? await prisma.organization.findUnique({ where: { id: eventOrgId }, select: { id: true } })
+      : null;
+    if (canAuditOrg) {
+      await writeAudit(
+        {
+          orgId: canAuditOrg.id,
+          apiKeyId: "system",
+          requestId: request.id,
+          ip: request.ip,
+          userAgent: readUserAgent(request.headers["user-agent"]),
+        },
+        "billing.webhook.processed",
+        "stripeEvent",
+        event.id,
+        { type: event.type }
+      );
+    }
+
     reply.status(200).send({ received: true });
   });
+}
+
+async function resolveWebhookOrgId(event: Stripe.Event) {
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    return session.metadata?.["orgId"] || null;
+  }
+
+  if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+    const subscription = event.data.object as Stripe.Subscription;
+    const existing = await prisma.subscription.findUnique({
+      where: { stripeSubscriptionId: subscription.id },
+      select: { orgId: true },
+    });
+    return existing?.orgId || null;
+  }
+
+  return null;
+}
+
+function readUserAgent(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+  return value;
 }

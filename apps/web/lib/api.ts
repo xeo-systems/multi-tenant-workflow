@@ -3,19 +3,90 @@
 export type ApiError = {
   code: string;
   message: string;
+  field?: string;
   requestId?: string;
   status: number;
 };
 
+export type ApiErrorKind = "unauthorized" | "forbidden" | "network" | "unknown";
+
 const baseUrl = process.env["NEXT_PUBLIC_API_BASE_URL"] || "http://localhost:4000";
+export const ORG_ID_STORAGE_KEY = "orgId";
+export const DASHBOARD_CHECKLIST_DISMISSED_KEY = "dashboardChecklistDismissed";
+export const ORG_CONTEXT_UPDATED_EVENT = "org-context-updated";
 
 export type ApiFetchOptions = RequestInit & {
   skipOrgHeader?: boolean;
 };
 
+export function getStoredOrgId(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return window.localStorage.getItem(ORG_ID_STORAGE_KEY);
+}
+
+export function setStoredOrgId(orgId: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(ORG_ID_STORAGE_KEY, orgId);
+  window.dispatchEvent(new Event(ORG_CONTEXT_UPDATED_EVENT));
+}
+
+export function clearStoredOrgId() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.removeItem(ORG_ID_STORAGE_KEY);
+  window.dispatchEvent(new Event(ORG_CONTEXT_UPDATED_EVENT));
+}
+
+export function isApiError(error: unknown): error is ApiError {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "status" in error &&
+      "message" in error &&
+      typeof (error as { status: unknown }).status === "number"
+  );
+}
+
+export function isForbiddenError(error: unknown) {
+  return isApiError(error) && error.status === 403;
+}
+
+export function isNetworkError(error: unknown) {
+  return isApiError(error) && error.status === 0;
+}
+
+export function toApiError(error: unknown, fallbackMessage = "Request failed"): ApiError {
+  if (isApiError(error)) {
+    return error;
+  }
+  if (error instanceof Error) {
+    return { code: "UNKNOWN", message: error.message || fallbackMessage, status: -1 };
+  }
+  return { code: "UNKNOWN", message: fallbackMessage, status: -1 };
+}
+
+export function getApiErrorKind(error: unknown): ApiErrorKind {
+  const apiErr = toApiError(error);
+  if (apiErr.status === 401) {
+    return "unauthorized";
+  }
+  if (apiErr.status === 403) {
+    return "forbidden";
+  }
+  if (apiErr.status === 0) {
+    return "network";
+  }
+  return "unknown";
+}
+
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const { skipOrgHeader = false, ...requestOptions } = options;
-  const orgId = typeof window !== "undefined" ? window.localStorage.getItem("orgId") : null;
+  const orgId = getStoredOrgId();
   const headers = new Headers(requestOptions.headers || {});
   if (!headers.has("Content-Type") && !(requestOptions.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
@@ -42,10 +113,11 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   }
 
   if (!res.ok) {
-    const data = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string; requestId?: string } } | null;
+    const data = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string; field?: string; requestId?: string } } | null;
     const err: ApiError = {
       code: data?.error?.code || "UNKNOWN",
       message: data?.error?.message || "Request failed",
+      field: data?.error?.field,
       requestId: data?.error?.requestId,
       status: res.status,
     };

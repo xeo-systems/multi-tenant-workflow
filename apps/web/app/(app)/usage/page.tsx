@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch, ApiError } from "@/lib/api";
+import { apiFetch, getApiErrorKind, toApiError } from "@/lib/api";
 import { useToast } from "@/lib/toast";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -23,17 +24,22 @@ type OrgResponse = {
   role: string;
 };
 
+const USAGE_VERIFIED_KEY = "activationUsageVerified";
+
 export default function UsagePage() {
   const { push } = useToast();
   const [usage, setUsage] = useState<UsageDaily[]>([]);
   const [loading, setLoading] = useState(true);
   const [plan, setPlan] = useState<{ plan: string; planLimit: number } | null>(null);
   const [forbidden, setForbidden] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       setForbidden(false);
+      setErrorMessage(null);
       try {
         const orgData = await apiFetch<OrgResponse>("/org");
         setPlan({ plan: orgData.org.plan, planLimit: orgData.org.planLimit });
@@ -41,9 +47,15 @@ export default function UsagePage() {
         const data = await apiFetch<UsageDaily[]>("/usage?days=30");
         setUsage(data.filter((entry) => entry.metric === METRIC));
       } catch (err) {
-        const apiErr = err as ApiError;
-        if (apiErr.status === 403) {
+        const apiErr = toApiError(err, "Failed to load usage");
+        const kind = getApiErrorKind(apiErr);
+        if (kind === "forbidden") {
           setForbidden(true);
+        } else {
+          setErrorMessage(apiErr.message);
+        }
+        if (kind === "network") {
+          push({ title: "Network error", description: "Could not reach API. Retry below.", variant: "destructive" });
         } else {
           push({ title: "Failed to load usage", description: apiErr.message, variant: "destructive" });
         }
@@ -52,11 +64,21 @@ export default function UsagePage() {
       }
     }
     load();
-  }, [push]);
+  }, [push, retryNonce]);
 
   const used = useMemo(() => usage.reduce((sum, entry) => sum + entry.quantity, 0), [usage]);
   const limit = plan?.planLimit ?? 1000;
   const ratio = limit > 0 ? used / limit : 0;
+  const progressWidth = Math.min(Math.max(ratio * 100, 0), 100);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (used > 0) {
+      window.localStorage.setItem(USAGE_VERIFIED_KEY, "1");
+    }
+  }, [used]);
 
   function usageMessage() {
     if (ratio >= 1) {
@@ -79,7 +101,7 @@ export default function UsagePage() {
         <CardHeader>
           <CardTitle>Current period</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
           {loading ? (
             <Skeleton className="h-16 w-full" />
           ) : (
@@ -87,9 +109,23 @@ export default function UsagePage() {
               <p className="text-3xl font-semibold tracking-tight">
                 {used} <span className="text-base font-normal text-muted-foreground">/ {limit} requests</span>
               </p>
+              <div className="h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={limit} aria-valuenow={used}>
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${progressWidth}%` }}
+                />
+              </div>
               <p className="text-sm text-muted-foreground capitalize">
                 Plan: {plan?.plan || "free"} • {usageMessage()}
               </p>
+              {used > 0 && (
+                <div className="rounded-md border border-dashed p-4 text-sm">
+                  <p className="font-medium">Activation success</p>
+                  <p className="text-muted-foreground">
+                    Usage has incremented from your API calls. Return to dashboard to see checklist completion.
+                  </p>
+                </div>
+              )}
             </>
           )}
         </CardContent>
@@ -111,8 +147,13 @@ export default function UsagePage() {
               title="Permissions required"
               description="Only OWNER, ADMIN, and BILLING roles can view usage details."
             />
+          ) : errorMessage ? (
+            <EmptyState title="Unable to load usage" description={errorMessage} actionLabel="Retry" onAction={() => setRetryNonce((v) => v + 1)} />
           ) : usage.length === 0 ? (
-            <EmptyState title="No usage yet" description="Start using the API to generate usage data." />
+            <EmptyState
+              title="No usage yet"
+              description="Create an API key, then call GET /data with X-Org-Id and Authorization: Bearer <api_key> to generate usage."
+            />
           ) : (
             <Table>
               <TableHeader>
@@ -133,6 +174,14 @@ export default function UsagePage() {
           )}
         </CardContent>
       </Card>
+
+      {!loading && !forbidden && (
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={() => setRetryNonce((v) => v + 1)}>
+            Refresh usage
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,12 +3,16 @@ import { apiKeySecret, prefixFromKey, sha256 } from "../lib/crypto";
 import { AppError } from "../lib/errors";
 import { writeAudit } from "./audit";
 import * as apiKeyRepo from "../repo/apiKeyRepo";
+import { requireOrgRole } from "./rbac";
 
 export async function listApiKeys(ctx: TenantContext) {
+  await requireOrgRole(ctx, ["OWNER", "ADMIN", "BILLING"]);
   return apiKeyRepo.listByOrg(ctx.orgId);
 }
 
 export async function createApiKey(ctx: TenantContext, name: string) {
+  await requireOrgRole(ctx, ["OWNER", "ADMIN", "BILLING"]);
+
   const secret = apiKeySecret();
   const prefix = prefixFromKey(secret);
 
@@ -20,6 +24,8 @@ export async function createApiKey(ctx: TenantContext, name: string) {
 }
 
 export async function revokeApiKey(ctx: TenantContext, id: string) {
+  await requireOrgRole(ctx, ["OWNER", "ADMIN", "BILLING"]);
+
   const apiKey = await apiKeyRepo.findById(ctx.orgId, id);
   if (!apiKey) {
     throw new AppError("NOT_FOUND", 404, "API key not found");

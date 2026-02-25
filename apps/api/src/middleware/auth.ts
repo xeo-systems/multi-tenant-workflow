@@ -45,6 +45,7 @@ export async function requireUser(request: FastifyRequest) {
     role: membership.role,
     orgId,
   };
+  request.log = request.log.child({ orgId, userId: session.userId, role: membership.role });
 }
 
 export async function requireRole(request: FastifyRequest, roles: Role[]) {

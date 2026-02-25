@@ -44,7 +44,7 @@ const usageQueue = new Queue("usage-rollups", { connection });
 
 const concurrency = Number(env.WORKER_CONCURRENCY || 5);
 
-new Worker(
+const stripeWorker = new Worker(
   "stripe-events",
   async (job) => {
     const event = job.data.event as Stripe.Event;
@@ -53,7 +53,7 @@ new Worker(
   { connection, concurrency }
 );
 
-new Worker(
+const usageWorker = new Worker(
   "usage-rollups",
   async (job) => {
     const date = job.data.date ? new Date(job.data.date) : new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -110,6 +110,11 @@ async function handleCheckoutCompleted(event: Stripe.Event) {
       status: "active",
     },
   });
+
+  await writeSystemAudit(orgId, "billing.webhook.subscription.created", "subscription", subscriptionId, {
+    stripeEventId: event.id,
+    type: event.type,
+  });
 }
 
 async function handleSubscriptionUpdated(event: Stripe.Event) {
@@ -136,6 +141,15 @@ async function handleSubscriptionUpdated(event: Stripe.Event) {
       currentPeriodEnd,
     },
   });
+
+  const action = event.type === "customer.subscription.deleted"
+    ? "billing.webhook.subscription.canceled"
+    : "billing.webhook.subscription.updated";
+  await writeSystemAudit(existing.orgId, action, "subscription", existing.id, {
+    stripeEventId: event.id,
+    stripeSubscriptionId: subscriptionId,
+    type: event.type,
+  });
 }
 
 async function rollupUsage(date: Date) {
@@ -156,3 +170,43 @@ async function rollupUsage(date: Date) {
     });
   }
 }
+
+async function writeSystemAudit(
+  orgId: string,
+  action: string,
+  targetType: string,
+  targetId: string,
+  metadata: Record<string, unknown>
+) {
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      action,
+      targetType,
+      targetId,
+      metadata: {
+        ...metadata,
+        actorApiKeyId: "system",
+      },
+    },
+  });
+}
+
+const shutdownSignals = ["SIGTERM", "SIGINT"] as const;
+shutdownSignals.forEach((signal) => {
+  process.on(signal, async () => {
+    try {
+      await Promise.allSettled([
+        stripeWorker.close(),
+        usageWorker.close(),
+        stripeQueue.close(),
+        usageQueue.close(),
+      ]);
+      await prisma.$disconnect();
+      process.exit(0);
+    } catch (error) {
+      console.error("Worker shutdown failed", error);
+      process.exit(1);
+    }
+  });
+});
