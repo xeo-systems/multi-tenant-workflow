@@ -22,14 +22,17 @@ export function OrgSwitcher() {
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 items-center gap-2">
       {editing ? (
         <>
           <Input
             aria-label="Organization ID"
             value={orgId}
-            onChange={(e) => setOrgId(e.currentTarget.value)}
-            className="h-8 w-48"
+            onChange={(e) => {
+              const value = e.currentTarget.value;
+              setOrgId(value);
+            }}
+            className="h-9 w-44 sm:w-52"
           />
           <Button size="sm" onClick={save} aria-label="Save organization">
             Save

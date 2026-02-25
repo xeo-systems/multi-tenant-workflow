@@ -30,7 +30,27 @@ a {
 }
 
 .container-page {
-  @apply mx-auto w-full max-w-6xl px-6;
+  @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+}
+
+.page-shell {
+  @apply space-y-8;
+}
+
+.page-header {
+  @apply space-y-2;
+}
+
+.page-title {
+  @apply text-2xl font-semibold tracking-tight sm:text-3xl;
+}
+
+.page-description {
+  @apply max-w-3xl text-sm text-muted-foreground sm:text-base;
+}
+
+.section-grid {
+  @apply grid gap-6;
 }
 
 .card {

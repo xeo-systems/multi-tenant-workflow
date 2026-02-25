@@ -9,6 +9,29 @@ import { Prisma } from "@saas/db";
 const SESSION_DAYS = 7;
 
 export async function authRoutes(app: FastifyInstance) {
+  app.get("/me", async (request) => {
+    const sessionToken = request.cookies["sid"] as string | undefined;
+    if (!sessionToken) {
+      throw new AppError("UNAUTHORIZED", 401, "Missing session");
+    }
+
+    const tokenHash = sha256(sessionToken);
+    const session = await prisma.session.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+    if (!session || session.expiresAt < new Date()) {
+      throw new AppError("UNAUTHORIZED", 401, "Invalid session");
+    }
+
+    return {
+      user: {
+        id: session.user.id,
+        email: session.user.email,
+      },
+    };
+  });
+
   app.post("/register", async (request, reply) => {
     const input = RegisterSchema.parse(request.body);
     const existing = await prisma.user.findUnique({ where: { email: input.email } });
@@ -62,20 +85,48 @@ export async function authRoutes(app: FastifyInstance) {
       throw new AppError("UNAUTHORIZED", 401, "Invalid credentials");
     }
 
+    const membership = await prisma.membership.findFirst({
+      where: { userId: user.id },
+      orderBy: { createdAt: "asc" },
+      select: { orgId: true },
+    });
+    if (!membership) {
+      throw new AppError("FORBIDDEN", 403, "No organization membership found");
+    }
+
     const sessionToken = await createSession(user.id);
     setSessionCookie(reply, sessionToken, app);
 
-    reply.send({ userId: user.id });
+    reply.send({ userId: user.id, orgId: membership.orgId });
   });
 
   app.post("/logout", async (request, reply) => {
-    const sessionToken = request.cookies["sid"] as string | undefined;
-    if (sessionToken) {
-      const tokenHash = sha256(sessionToken);
-      await prisma.session.deleteMany({ where: { tokenHash } });
+    try {
+      const sessionToken = request.cookies["sid"] as string | undefined;
+      if (sessionToken) {
+        try {
+          const tokenHash = sha256(sessionToken);
+          await prisma.session.deleteMany({ where: { tokenHash } });
+        } catch (error) {
+          request.log.error({ err: error }, "Failed to revoke session during logout");
+        }
+      }
+    } catch (error) {
+      request.log.error({ err: error }, "Logout handler failure");
+    } finally {
+      try {
+        reply.clearCookie("sid", {
+          path: "/",
+          httpOnly: true,
+          sameSite: "lax",
+          secure: app.env.COOKIE_SECURE === "true",
+          domain: app.env.COOKIE_DOMAIN || undefined,
+        });
+      } catch (error) {
+        request.log.error({ err: error }, "Failed to clear session cookie during logout");
+      }
+      reply.send({ ok: true });
     }
-    reply.clearCookie("sid");
-    reply.send({ ok: true });
   });
 }
 

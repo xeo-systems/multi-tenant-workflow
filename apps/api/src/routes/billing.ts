@@ -11,6 +11,34 @@ export async function billingRoutes(app: FastifyInstance) {
   const stripeKey = env.STRIPE_SECRET_KEY;
   const stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: "2023-10-16" }) : null;
 
+  app.get("/status", { preHandler: [enforceUsageLimit, requireUser] }, async (request) => {
+    const org = await prisma.organization.findUnique({
+      where: { id: request.auth!.orgId },
+      select: { plan: true, planLimit: true },
+    });
+    if (!org) {
+      throw new AppError("NOT_FOUND", 404, "Organization not found");
+    }
+
+    const subscription = await prisma.subscription.findFirst({
+      where: { orgId: request.auth!.orgId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return {
+      billingConfigured: Boolean(stripe),
+      plan: org.plan,
+      planLimit: org.planLimit,
+      subscription: subscription
+        ? {
+            status: subscription.status,
+            currentPeriodStart: subscription.currentPeriodStart,
+            currentPeriodEnd: subscription.currentPeriodEnd,
+          }
+        : null,
+    };
+  });
+
   app.post("/checkout", { preHandler: [enforceUsageLimit, requireUser, (req) => requireRole(req, ["OWNER", "ADMIN", "BILLING"]) ] }, async (request) => {
     if (!stripe) {
       throw new AppError("BAD_REQUEST", 400, "Stripe not configured");

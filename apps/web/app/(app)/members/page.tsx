@@ -1,39 +1,59 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { MembershipInviteSchema, Role, RoleSchema } from "@saas/shared";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useToast } from "@/lib/toast";
-import { InviteMemberSchema } from "@/lib/validators";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/empty-state";
 
 type Member = {
   id: string;
-  role: string;
+  role: Role;
   user: { id: string; email: string };
-  createdAt: string;
 };
 
-const roles = ["OWNER", "ADMIN", "MEMBER", "BILLING", "READONLY"] as const;
+type OrgResponse = {
+  org: { id: string; name: string; plan: string; planLimit: number };
+  role: Role;
+};
+
+const roles = RoleSchema.options;
 
 export default function MembersPage() {
   const { push } = useToast();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
-  const [invite, setInvite] = useState({ email: "", role: "MEMBER" });
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  const [viewerRole, setViewerRole] = useState<Role | null>(null);
+  const [invite, setInvite] = useState({ email: "", role: "MEMBER" as Role });
+
+  const canManage = useMemo(() => viewerRole === "OWNER" || viewerRole === "ADMIN", [viewerRole]);
 
   async function loadMembers() {
     setLoading(true);
+    setErrorMessage(null);
+    setPermissionDenied(false);
+
     try {
-      const data = await apiFetch<Member[]>("/org/members");
-      setMembers(data);
+      const orgData = await apiFetch<OrgResponse>("/org");
+      setViewerRole(orgData.role);
+
+      const memberData = await apiFetch<Member[]>("/org/members");
+      setMembers(memberData);
     } catch (err) {
       const apiErr = err as ApiError;
-      push({ title: "Failed to load members", description: apiErr.message, variant: "destructive" });
+      if (apiErr.status === 403) {
+        setPermissionDenied(true);
+      } else {
+        setErrorMessage(apiErr.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -43,72 +63,112 @@ export default function MembersPage() {
     loadMembers();
   }, []);
 
-  async function inviteMember() {
-    const parsed = InviteMemberSchema.safeParse(invite);
-    if (!parsed.success) {
-      push({ title: "Invalid input", description: "Check email and role", variant: "destructive" });
+  function handleForbidden(apiErr: ApiError, fallbackTitle: string) {
+    if (apiErr.status === 403) {
+      push({ title: "Permission denied", description: "You do not have access to perform this action.", variant: "destructive" });
       return;
     }
+    push({ title: fallbackTitle, description: apiErr.message, variant: "destructive" });
+  }
+
+  async function inviteMember() {
+    if (!canManage) {
+      return;
+    }
+
+    const parsed = MembershipInviteSchema.safeParse(invite);
+    if (!parsed.success) {
+      push({ title: "Invalid input", description: "Enter a valid email and role.", variant: "destructive" });
+      return;
+    }
+
     try {
       await apiFetch("/org/members", { method: "POST", body: JSON.stringify(parsed.data) });
-      push({ title: "Invite sent", description: "Member added to org." });
+      push({ title: "Invite sent", description: "Member added to organization." });
       setInvite({ email: "", role: "MEMBER" });
       await loadMembers();
     } catch (err) {
-      const apiErr = err as ApiError;
-      push({ title: "Invite failed", description: apiErr.message, variant: "destructive" });
+      handleForbidden(err as ApiError, "Invite failed");
     }
   }
 
-  async function updateRole(memberId: string, role: string) {
+  async function updateRole(memberId: string, role: Role) {
+    if (!canManage) {
+      return;
+    }
+
     try {
       await apiFetch(`/org/members/${memberId}`, { method: "PATCH", body: JSON.stringify({ role }) });
       push({ title: "Role updated" });
       await loadMembers();
     } catch (err) {
-      const apiErr = err as ApiError;
-      push({ title: "Update failed", description: apiErr.message, variant: "destructive" });
+      handleForbidden(err as ApiError, "Role update failed");
     }
   }
 
-  async function removeMember(memberId: string) {
+  async function removeMember(memberId: string, email: string) {
+    if (!canManage) {
+      return;
+    }
+
+    if (typeof window !== "undefined" && !window.confirm(`Remove ${email} from the organization?`)) {
+      return;
+    }
+
     try {
       await apiFetch(`/org/members/${memberId}`, { method: "DELETE" });
       push({ title: "Member removed" });
       await loadMembers();
     } catch (err) {
-      const apiErr = err as ApiError;
-      push({ title: "Remove failed", description: apiErr.message, variant: "destructive" });
+      handleForbidden(err as ApiError, "Remove failed");
     }
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Members</h1>
-        <p className="text-sm text-muted-foreground">Manage roles and access within your organization.</p>
+    <div className="page-shell">
+      <div className="page-header">
+        <h1 className="page-title">Members</h1>
+        <p className="page-description">Invite teammates and manage organization access.</p>
       </div>
+
+      {!permissionDenied && !canManage && viewerRole && (
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">
+              You are signed in as {viewerRole}. This page is read-only for your role.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
           <CardTitle>Invite member</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-3">
-          <div className="space-y-2">
+          <div className="space-y-2 md:col-span-2">
             <Label htmlFor="invite-email">Email</Label>
             <Input
               id="invite-email"
               value={invite.email}
-              onChange={(e) => setInvite((prev) => ({ ...prev, email: e.currentTarget.value }))}
+              onChange={(e) => {
+                const value = e.currentTarget.value;
+                setInvite((prev) => ({ ...prev, email: value }));
+              }}
+              disabled={!canManage || permissionDenied}
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="invite-role">Role</Label>
             <select
               id="invite-role"
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              className="h-10 w-full rounded-md border bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={invite.role}
-              onChange={(e) => setInvite((prev) => ({ ...prev, role: e.currentTarget.value }))}
+              onChange={(e) => {
+                const value = RoleSchema.parse(e.currentTarget.value);
+                setInvite((prev) => ({ ...prev, role: value }));
+              }}
+              disabled={!canManage || permissionDenied}
             >
               {roles.map((role) => (
                 <option key={role} value={role}>
@@ -117,8 +177,10 @@ export default function MembersPage() {
               ))}
             </select>
           </div>
-          <div className="flex items-end">
-            <Button onClick={inviteMember}>Send invite</Button>
+          <div className="md:col-span-3 flex justify-end">
+            <Button onClick={inviteMember} disabled={!canManage || permissionDenied}>
+              Send invite
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -129,20 +191,27 @@ export default function MembersPage() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <p className="text-sm text-muted-foreground">Loading members...</p>
-          ) : members.length === 0 ? (
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : errorMessage ? (
+            <EmptyState title="Unable to load members" description={errorMessage} actionLabel="Retry" onAction={loadMembers} />
+          ) : permissionDenied ? (
             <EmptyState
-              title="No members yet"
-              description="Invite your first teammate to get started."
-              actionLabel="Send invite"
-              onAction={inviteMember}
+              title="Access denied"
+              description="You do not have permission to view members for this organization."
             />
+          ) : members.length === 0 ? (
+            <EmptyState title="No members yet" description="Invite your first teammate to get started." actionLabel={canManage ? "Send invite" : undefined} onAction={canManage ? inviteMember : undefined} />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -152,10 +221,14 @@ export default function MembersPage() {
                     <TableCell>{member.user.email}</TableCell>
                     <TableCell>
                       <select
-                        className="h-9 rounded-md border bg-background px-2 text-sm"
+                        className="h-9 rounded-md border bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         value={member.role}
-                        onChange={(e) => updateRole(member.id, e.currentTarget.value)}
+                        onChange={(e) => {
+                          const value = RoleSchema.parse(e.currentTarget.value);
+                          updateRole(member.id, value);
+                        }}
                         aria-label={`Change role for ${member.user.email}`}
+                        disabled={!canManage}
                       >
                         {roles.map((role) => (
                           <option key={role} value={role}>
@@ -164,12 +237,14 @@ export default function MembersPage() {
                         ))}
                       </select>
                     </TableCell>
+                    <TableCell>Active</TableCell>
                     <TableCell>
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => removeMember(member.id)}
+                        onClick={() => removeMember(member.id, member.user.email)}
                         aria-label={`Remove ${member.user.email}`}
+                        disabled={!canManage}
                       >
                         Remove
                       </Button>

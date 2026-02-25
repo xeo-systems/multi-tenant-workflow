@@ -49,7 +49,7 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-3">
         <Skeleton className="h-28" />
         <Skeleton className="h-28" />
         <Skeleton className="h-28" />
@@ -62,19 +62,19 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Welcome back</h1>
-        <p className="text-sm text-muted-foreground">Organization overview and plan status.</p>
+    <div className="page-shell">
+      <div className="page-header">
+        <h1 className="page-title">Welcome back</h1>
+        <p className="page-description">Organization overview and plan status.</p>
       </div>
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="section-grid md:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>Organization</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm font-semibold">{data.org.name}</p>
-            <p className="text-xs text-muted-foreground">ID: {data.org.id}</p>
+            <p className="text-base font-semibold">{data.org.name || "Unnamed organization"}</p>
+            <p className="text-sm text-muted-foreground">ID: {data.org.id || "No org selected"}</p>
           </CardContent>
         </Card>
         <Card>
@@ -82,8 +82,10 @@ export default function DashboardPage() {
             <CardTitle>Plan</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm font-semibold capitalize">{data.org.plan}</p>
-            <p className="text-xs text-muted-foreground">Limit: {data.org.planLimit} requests</p>
+            <p className="text-base font-semibold capitalize">{data.org.plan || "free"}</p>
+            <p className="text-sm text-muted-foreground">
+              Limit: {typeof data.org.planLimit === "number" ? data.org.planLimit : 1000} requests
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -91,8 +93,8 @@ export default function DashboardPage() {
             <CardTitle>Role</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm font-semibold">{data.role}</p>
-            <p className="text-xs text-muted-foreground">Permissions scoped to your role.</p>
+            <p className="text-base font-semibold">{data.role || "MEMBER"}</p>
+            <p className="text-sm text-muted-foreground">Permissions scoped to your role.</p>
           </CardContent>
         </Card>
       </div>

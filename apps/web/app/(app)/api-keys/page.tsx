@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ApiKeyCreateSchema } from "@saas/shared";
 import { apiFetch, ApiError } from "@/lib/api";
-import { ApiKeySchema } from "@/lib/validators";
 import { useToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { EmptyState } from "@/components/empty-state";
@@ -27,6 +28,7 @@ export default function ApiKeysPage() {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(true);
   const [newSecret, setNewSecret] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   async function loadKeys() {
     setLoading(true);
@@ -46,11 +48,12 @@ export default function ApiKeysPage() {
   }, []);
 
   async function createKey() {
-    const parsed = ApiKeySchema.safeParse({ name });
+    const parsed = ApiKeyCreateSchema.safeParse({ name });
     if (!parsed.success) {
       push({ title: "Invalid name", description: "Provide a key name", variant: "destructive" });
       return;
     }
+
     try {
       const data = await apiFetch<{ secret: string }>("/api-keys", {
         method: "POST",
@@ -58,6 +61,8 @@ export default function ApiKeysPage() {
       });
       setNewSecret(data.secret);
       setName("");
+      setCreateOpen(false);
+      push({ title: "Key created" });
       await loadKeys();
     } catch (err) {
       const apiErr = err as ApiError;
@@ -65,7 +70,11 @@ export default function ApiKeysPage() {
     }
   }
 
-  async function revokeKey(id: string) {
+  async function revokeKey(id: string, keyName: string) {
+    if (typeof window !== "undefined" && !window.confirm(`Revoke API key '${keyName}'?`)) {
+      return;
+    }
+
     try {
       await apiFetch(`/api-keys/${id}`, { method: "DELETE" });
       push({ title: "Key revoked" });
@@ -76,11 +85,19 @@ export default function ApiKeysPage() {
     }
   }
 
+  async function copySecret() {
+    if (!newSecret || typeof navigator === "undefined") {
+      return;
+    }
+    await navigator.clipboard.writeText(newSecret);
+    push({ title: "Copied", description: "API key copied to clipboard." });
+  }
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">API Keys</h1>
-        <p className="text-sm text-muted-foreground">Create and revoke keys used for programmatic access.</p>
+    <div className="page-shell">
+      <div className="page-header">
+        <h1 className="page-title">API Keys</h1>
+        <p className="page-description">Create and revoke keys used for programmatic access.</p>
       </div>
 
       {newSecret && (
@@ -89,22 +106,59 @@ export default function ApiKeysPage() {
           <AlertDescription>
             Copy and store this key now. You will not be able to view it again.
             <code className="mt-2 block rounded bg-muted px-2 py-1 text-xs">{newSecret}</code>
+            <div className="mt-3 flex items-center gap-2">
+              <Button size="sm" onClick={copySecret}>
+                Copy secret
+              </Button>
+              <span className="text-xs text-muted-foreground">Treat this as a password.</span>
+            </div>
           </AlertDescription>
         </Alert>
       )}
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-row items-center justify-between">
           <CardTitle>Create key</CardTitle>
+          <Button onClick={() => setCreateOpen(true)}>New API key</Button>
         </CardHeader>
-        <CardContent className="flex flex-wrap items-end gap-3">
-          <div className="space-y-2">
-            <Label htmlFor="key-name">Key name</Label>
-            <Input id="key-name" value={name} onChange={(e) => setName(e.currentTarget.value)} />
-          </div>
-          <Button onClick={createKey}>Create</Button>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">Use named keys for integrations and revoke any key instantly.</p>
         </CardContent>
       </Card>
+
+      {createOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+          <Card className="w-full max-w-lg">
+            <CardHeader>
+              <CardTitle>Create API key</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="space-y-2">
+                <Label htmlFor="key-name">Key name</Label>
+                <Input
+                  id="key-name"
+                  value={name}
+                  onChange={(e) => {
+                    const value = e.currentTarget.value;
+                    setName(value);
+                  }}
+                  placeholder="Production Integration"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="key-scopes">Scopes (optional)</Label>
+                <Input id="key-scopes" value="Not supported by current API" disabled />
+              </div>
+              <div className="flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setCreateOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={createKey}>Create</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -112,20 +166,21 @@ export default function ApiKeysPage() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <p className="text-sm text-muted-foreground">Loading keys...</p>
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
           ) : keys.length === 0 ? (
-            <EmptyState
-              title="No keys"
-              description="Create a key to start making API calls."
-              actionLabel="Create key"
-              onAction={createKey}
-            />
+            <EmptyState title="No keys" description="Create a key to start making API calls." actionLabel="Create key" onAction={() => setCreateOpen(true)} />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Prefix</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Last Used</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -135,12 +190,14 @@ export default function ApiKeysPage() {
                   <TableRow key={key.id}>
                     <TableCell>{key.name}</TableCell>
                     <TableCell>{key.prefix}</TableCell>
+                    <TableCell>{new Date(key.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell>{key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : "Never"}</TableCell>
                     <TableCell>{key.revokedAt ? "Revoked" : "Active"}</TableCell>
                     <TableCell>
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => revokeKey(key.id)}
+                        onClick={() => revokeKey(key.id, key.name)}
                         disabled={Boolean(key.revokedAt)}
                       >
                         Revoke

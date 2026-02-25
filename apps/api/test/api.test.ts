@@ -6,6 +6,7 @@ import { sha256 } from "../src/lib/crypto";
 import Stripe from "stripe";
 import fs from "fs";
 import path from "path";
+import bcrypt from "bcryptjs";
 
 const stripe = new Stripe("sk_test_123", { apiVersion: "2023-10-16" });
 
@@ -423,6 +424,62 @@ describe("error shape", () => {
     const body = res.json() as { error?: { code?: string; message?: string; requestId?: string } };
     expect(body.error?.code).toBe("NOT_FOUND");
     expect(typeof body.error?.requestId).toBe("string");
+    await app.close();
+  });
+});
+
+describe("auth logout", () => {
+  it("returns success even when usage recording fails", async () => {
+    const user = await prisma.user.create({ data: { email: "logout@example.com", passwordHash: "hash" } });
+    const token = "sessiontoken-logout";
+    await prisma.session.create({
+      data: {
+        userId: user.id,
+        tokenHash: sha256(token),
+        expiresAt: new Date(Date.now() + 86400 * 1000),
+      },
+    });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/logout",
+      headers: {
+        "x-org-id": "nonexistent-org-id",
+        cookie: `sid=${token}`,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok?: boolean };
+    expect(body.ok).toBe(true);
+    await app.close();
+  });
+});
+
+describe("auth login", () => {
+  it("returns a default orgId for the authenticated user", async () => {
+    const org = await prisma.organization.create({ data: { name: "Org Login" } });
+    const password = "password123";
+    const passwordHash = await bcrypt.hash(password, 12);
+    const user = await prisma.user.create({
+      data: { email: "login-org@example.com", passwordHash },
+    });
+    await prisma.membership.create({
+      data: { orgId: org.id, userId: user.id, role: "OWNER" },
+    });
+
+    const app = buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: user.email, password },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { userId?: string; orgId?: string };
+    expect(body.userId).toBe(user.id);
+    expect(body.orgId).toBe(org.id);
     await app.close();
   });
 });

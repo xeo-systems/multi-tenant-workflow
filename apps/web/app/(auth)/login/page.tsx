@@ -35,7 +35,14 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      await apiFetch("/auth/login", { method: "POST", body: JSON.stringify(values) });
+      const data = await apiFetch<{ userId: string; orgId: string }>("/auth/login", {
+        method: "POST",
+        skipOrgHeader: true,
+        body: JSON.stringify(values),
+      });
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("orgId", data.orgId);
+      }
       push({ title: "Welcome back", description: "Login successful." });
       router.push("/app");
     } catch (err) {
@@ -65,7 +72,10 @@ export default function LoginPage() {
                   id="email"
                   type="email"
                   value={values.email}
-                  onChange={(e) => setValues((prev) => ({ ...prev, email: e.currentTarget.value }))}
+                  onChange={(e) => {
+                    const value = e.currentTarget.value;
+                    setValues((prev) => ({ ...prev, email: value }));
+                  }}
                   aria-invalid={Boolean(errors["email"])}
                   aria-describedby={errors["email"] ? "email-error" : undefined}
                   required
@@ -82,7 +92,10 @@ export default function LoginPage() {
                   id="password"
                   type="password"
                   value={values.password}
-                  onChange={(e) => setValues((prev) => ({ ...prev, password: e.currentTarget.value }))}
+                  onChange={(e) => {
+                    const value = e.currentTarget.value;
+                    setValues((prev) => ({ ...prev, password: value }));
+                  }}
                   aria-invalid={Boolean(errors["password"])}
                   aria-describedby={errors["password"] ? "password-error" : undefined}
                   required

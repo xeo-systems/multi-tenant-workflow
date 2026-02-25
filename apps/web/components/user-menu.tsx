@@ -4,19 +4,21 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useRouter } from "next/navigation";
-import { useToast } from "@/lib/toast";
 
 export function UserMenu() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
-  const { push } = useToast();
 
   async function logout() {
     try {
-      await apiFetch("/auth/logout", { method: "POST" });
+      await apiFetch("/auth/logout", { method: "POST", skipOrgHeader: true });
+    } catch {
+      // Best effort: continue local sign-out even if API logout fails.
+    } finally {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("orgId");
+      }
       router.push("/login");
-    } catch (err) {
-      push({ title: "Logout failed", description: "Please try again", variant: "destructive" });
     }
   }
 

@@ -52,7 +52,11 @@ export function buildApp() {
 
   app.addHook("onResponse", async (request, reply) => {
     if (reply.statusCode < 500 || request.usageReserved) {
-      await recordUsage(request, reply);
+      try {
+        await recordUsage(request, reply);
+      } catch (error) {
+        request.log.error({ err: error }, "Usage recording failed");
+      }
     }
   });
 

@@ -5,21 +5,33 @@ import { apiFetch, ApiError } from "@/lib/api";
 import { useToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+
+type BillingStatus = {
+  billingConfigured: boolean;
+  plan: string;
+  planLimit: number;
+  subscription: {
+    status: string;
+    currentPeriodStart: string | null;
+    currentPeriodEnd: string | null;
+  } | null;
+};
 
 export default function BillingPage() {
   const { push } = useToast();
-  const [plan, setPlan] = useState<{ plan: string; planLimit: number } | null>(null);
+  const [status, setStatus] = useState<BillingStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        const data = await apiFetch<{ plan: string; planLimit: number }>("/admin/plan");
-        setPlan(data);
+        const data = await apiFetch<BillingStatus>("/billing/status");
+        setStatus(data);
       } catch (err) {
         const apiErr = err as ApiError;
-        push({ title: "Failed to load plan", description: apiErr.message, variant: "destructive" });
+        push({ title: "Failed to load billing", description: apiErr.message, variant: "destructive" });
       } finally {
         setLoading(false);
       }
@@ -47,38 +59,55 @@ export default function BillingPage() {
       }
     } catch (err) {
       const apiErr = err as ApiError;
-      push({ title: "Portal failed", description: apiErr.message, variant: "destructive" });
+      push({ title: "Manage billing failed", description: apiErr.message, variant: "destructive" });
     }
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Billing</h1>
-        <p className="text-sm text-muted-foreground">Manage your subscription and payment method.</p>
+    <div className="page-shell">
+      <div className="page-header">
+        <h1 className="page-title">Billing</h1>
+        <p className="page-description">Manage your subscription and payment method.</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Plan status</CardTitle>
+          <CardTitle>Subscription</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
           {loading ? (
-            <p className="text-sm text-muted-foreground">Loading plan...</p>
-          ) : plan ? (
-            <div className="space-y-1">
-              <p className="text-sm font-semibold">{plan.plan}</p>
-              <p className="text-xs text-muted-foreground">Limit: {plan.planLimit} requests</p>
-            </div>
+            <Skeleton className="h-20 w-full" />
+          ) : status ? (
+            <>
+              <div className="space-y-2">
+                <p className="text-base font-semibold capitalize">Plan: {status.plan}</p>
+                <p className="text-sm text-muted-foreground">Limit: {status.planLimit} requests</p>
+                <p className="text-sm text-muted-foreground capitalize">
+                  Subscription status: {status.subscription?.status || "none"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Renewal date: {status.subscription?.currentPeriodEnd ? new Date(status.subscription.currentPeriodEnd).toLocaleDateString() : "Not available"}
+                </p>
+              </div>
+
+              {!status.billingConfigured && (
+                <p className="text-sm text-muted-foreground">
+                  Billing not configured. Set Stripe environment variables on the API service.
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-3">
+                <Button onClick={openPortal} variant="outline" disabled={!status.billingConfigured}>
+                  Manage billing
+                </Button>
+                <Button onClick={startCheckout} disabled={!status.billingConfigured}>
+                  Upgrade
+                </Button>
+              </div>
+            </>
           ) : (
-            <p className="text-sm text-muted-foreground">Plan data unavailable.</p>
+            <p className="text-sm text-muted-foreground">Billing data unavailable.</p>
           )}
-          <div className="flex flex-wrap gap-3">
-            <Button onClick={startCheckout}>Start checkout</Button>
-            <Button variant="outline" onClick={openPortal}>
-              Open billing portal
-            </Button>
-          </div>
         </CardContent>
       </Card>
     </div>

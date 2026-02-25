@@ -37,6 +37,7 @@ export default function RegisterPage() {
     try {
       const data = await apiFetch<{ orgId: string; userId: string }>("/auth/register", {
         method: "POST",
+        skipOrgHeader: true,
         body: JSON.stringify(values),
       });
       if (typeof window !== "undefined") {
@@ -70,7 +71,10 @@ export default function RegisterPage() {
                 <Input
                   id="orgName"
                   value={values.orgName}
-                  onChange={(e) => setValues((prev) => ({ ...prev, orgName: e.currentTarget.value }))}
+                  onChange={(e) => {
+                    const value = e.currentTarget.value;
+                    setValues((prev) => ({ ...prev, orgName: value }));
+                  }}
                   aria-invalid={Boolean(errors["orgName"])}
                   aria-describedby={errors["orgName"] ? "org-error" : undefined}
                   required
@@ -87,7 +91,10 @@ export default function RegisterPage() {
                   id="email"
                   type="email"
                   value={values.email}
-                  onChange={(e) => setValues((prev) => ({ ...prev, email: e.currentTarget.value }))}
+                  onChange={(e) => {
+                    const value = e.currentTarget.value;
+                    setValues((prev) => ({ ...prev, email: value }));
+                  }}
                   aria-invalid={Boolean(errors["email"])}
                   aria-describedby={errors["email"] ? "email-error" : undefined}
                   required
@@ -104,7 +111,10 @@ export default function RegisterPage() {
                   id="password"
                   type="password"
                   value={values.password}
-                  onChange={(e) => setValues((prev) => ({ ...prev, password: e.currentTarget.value }))}
+                  onChange={(e) => {
+                    const value = e.currentTarget.value;
+                    setValues((prev) => ({ ...prev, password: value }));
+                  }}
                   aria-invalid={Boolean(errors["password"])}
                   aria-describedby={errors["password"] ? "password-error" : undefined}
                   required

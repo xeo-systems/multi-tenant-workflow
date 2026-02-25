@@ -10,7 +10,7 @@ export async function orgRoutes(app: FastifyInstance) {
     return { org, role: request.auth!.role };
   });
 
-  app.get("/members", { preHandler: [enforceUsageLimit, requireUser, (req) => requireRole(req, ["OWNER", "ADMIN"]) ] }, async (request) => {
+  app.get("/members", { preHandler: [enforceUsageLimit, requireUser] }, async (request) => {
     const members = await listMembers({ orgId: request.auth!.orgId, userId: request.auth!.userId });
     return members.map((member: { id: string; role: string; user: { id: string; email: string }; createdAt: Date }) => ({
       id: member.id,
