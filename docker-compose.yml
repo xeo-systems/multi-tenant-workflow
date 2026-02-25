@@ -1,0 +1,19 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16
+    container_name: workspace_pg
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: saas
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  redis:
+    image: redis:7
+    container_name: workspace_redis
+    ports:
+      - "6379:6379"
+volumes:
+  pgdata:

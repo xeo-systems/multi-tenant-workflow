@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+  BILLING
+  READONLY
+}
+
+enum SubscriptionStatus {
+  active
+  trialing
+  canceled
+  past_due
+  unpaid
+  incomplete
+  incomplete_expired
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  passwordHash String
+  createdAt    DateTime     @default(now())
+  memberships  Membership[]
+  sessions     Session[]
+}
+
+model Organization {
+  id          String         @id @default(cuid())
+  name        String
+  plan        String         @default("free")
+  planLimit   Int            @default(1000)
+  createdAt   DateTime       @default(now())
+  memberships Membership[]
+  apiKeys     ApiKey[]
+  subscriptions Subscription[]
+  usageEvents UsageEvent[]
+  usageDaily  UsageDaily[]
+  auditLogs   AuditLog[]
+}
+
+model Membership {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  role      Role
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@unique([orgId, userId])
+  @@index([userId])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  orgId       String
+  name        String
+  prefix      String
+  hash        String
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  usageEvents  UsageEvent[]
+
+  @@index([orgId])
+  @@index([prefix])
+}
+
+model UsageEvent {
+  id        String   @id @default(cuid())
+  orgId     String
+  metric    String
+  quantity  Int
+  ts        DateTime @default(now())
+  apiKeyId  String?
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  apiKey      ApiKey?       @relation(fields: [apiKeyId], references: [id])
+
+  @@index([orgId, metric, ts])
+}
+
+model UsageDaily {
+  id       String   @id @default(cuid())
+  orgId    String
+  metric   String
+  date     DateTime
+  quantity Int
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, metric, date])
+  @@index([orgId, date])
+}
+
+model StripeEvent {
+  id          String   @id @default(cuid())
+  stripeId    String   @unique
+  type        String
+  receivedAt  DateTime @default(now())
+}
+
+model Subscription {
+  id                    String              @id @default(cuid())
+  orgId                 String
+  stripeCustomerId      String
+  stripeSubscriptionId  String @unique
+  status                SubscriptionStatus
+  currentPeriodStart    DateTime?
+  currentPeriodEnd      DateTime?
+  createdAt             DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  orgId       String
+  actorUserId String?
+  action      String
+  targetType  String
+  targetId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, createdAt])
+}

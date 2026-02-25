@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 48 33% 96%;
+  --foreground: 20 14% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 20 14% 12%;
+  --muted: 30 8% 90%;
+  --muted-foreground: 25 5% 40%;
+  --primary: 220 60% 45%;
+  --primary-foreground: 0 0% 100%;
+  --border: 30 10% 85%;
+  --ring: 220 60% 45%;
+  --radius: 14px;
+}
+
+* {
+  @apply border-border;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+}
+
+a {
+  @apply text-foreground hover:text-primary;
+}
+
+.container-page {
+  @apply mx-auto w-full max-w-6xl px-6;
+}
+
+.card {
+  @apply rounded-lg border bg-card p-6 shadow-sm;
+}
+
+.section-title {
+  @apply text-xl font-semibold;
+}
+
+.muted {
+  @apply text-sm text-muted-foreground;
+}

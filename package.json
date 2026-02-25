@@ -1,0 +1,23 @@
+{
+  "name": "saas-monorepo",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "dev": "pnpm -r dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "db:generate": "pnpm --filter @saas/db generate",
+    "db:migrate": "pnpm --filter @saas/db migrate",
+    "db:seed": "pnpm --filter @saas/db seed",
+    "postinstall": "pnpm db:generate",
+    "start:api": "pnpm --filter @saas/api start",
+    "start:worker": "pnpm --filter @saas/worker start"
+  },
+  "devDependencies": {
+    "typescript": "5.4.5"
+  }
+}

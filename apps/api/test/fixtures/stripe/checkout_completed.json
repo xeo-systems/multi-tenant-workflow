@@ -1,0 +1,15 @@
+{
+  "id": "evt_test_checkout",
+  "object": "event",
+  "type": "checkout.session.completed",
+  "data": {
+    "object": {
+      "id": "cs_test_123",
+      "object": "checkout.session",
+      "subscription": "sub_test_123",
+      "customer": "cus_test_123",
+      "metadata": {"orgId": "org_test_123"},
+      "expires_at": 1714000000
+    }
+  }
+}

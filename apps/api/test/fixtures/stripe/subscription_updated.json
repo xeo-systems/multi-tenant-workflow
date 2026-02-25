@@ -1,0 +1,14 @@
+{
+  "id": "evt_test_sub_updated",
+  "object": "event",
+  "type": "customer.subscription.updated",
+  "data": {
+    "object": {
+      "id": "sub_test_123",
+      "object": "subscription",
+      "customer": "cus_test_123",
+      "status": "active",
+      "current_period_end": 1714000000
+    }
+  }
+}
