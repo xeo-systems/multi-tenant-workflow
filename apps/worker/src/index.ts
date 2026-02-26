@@ -28,6 +28,7 @@ const EnvSchema = z.object({
   REDIS_URL: z.string().url(),
   STRIPE_SECRET_KEY: z.string().optional().nullable(),
   WORKER_CONCURRENCY: z.string().default("5"),
+  AUDIT_LOG_RETENTION_DAYS: z.string().default("365"),
 });
 
 const env = EnvSchema.parse(process.env);
@@ -37,10 +38,12 @@ const connection = {
   host: redisUrl.hostname,
   port: Number(redisUrl.port || "6379"),
   password: redisUrl.password || undefined,
+  tls: redisUrl.protocol === "rediss:" ? {} : undefined,
 };
 
 const stripeQueue = new Queue("stripe-events", { connection });
 const usageQueue = new Queue("usage-rollups", { connection });
+const maintenanceQueue = new Queue("maintenance-jobs", { connection });
 
 const concurrency = Number(env.WORKER_CONCURRENCY || 5);
 
@@ -62,6 +65,17 @@ const usageWorker = new Worker(
   { connection, concurrency: 2 }
 );
 
+const maintenanceWorker = new Worker(
+  "maintenance-jobs",
+  async (job) => {
+    if (job.name === "audit-retention") {
+      const retentionDays = Math.max(1, Number(env.AUDIT_LOG_RETENTION_DAYS || "365"));
+      await cleanupAuditLogs(retentionDays);
+    }
+  },
+  { connection, concurrency: 1 }
+);
+
 void ensureRepeatable();
 
 async function ensureRepeatable() {
@@ -70,6 +84,14 @@ async function ensureRepeatable() {
     jobId: "daily-usage-rollup",
   };
   await usageQueue.add("rollup", { }, opts);
+  await maintenanceQueue.add(
+    "audit-retention",
+    {},
+    {
+      repeat: { pattern: "30 2 * * *" },
+      jobId: "daily-audit-retention",
+    }
+  );
 }
 
 async function handleStripeEvent(event: Stripe.Event) {
@@ -171,6 +193,15 @@ async function rollupUsage(date: Date) {
   }
 }
 
+async function cleanupAuditLogs(retentionDays: number) {
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+  await prisma.auditLog.deleteMany({
+    where: {
+      createdAt: { lt: cutoff },
+    },
+  });
+}
+
 async function writeSystemAudit(
   orgId: string,
   action: string,
@@ -199,8 +230,10 @@ shutdownSignals.forEach((signal) => {
       await Promise.allSettled([
         stripeWorker.close(),
         usageWorker.close(),
+        maintenanceWorker.close(),
         stripeQueue.close(),
         usageQueue.close(),
+        maintenanceQueue.close(),
       ]);
       await prisma.$disconnect();
       process.exit(0);

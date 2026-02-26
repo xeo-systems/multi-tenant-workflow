@@ -22,6 +22,7 @@ function createQueue(name: string): QueueLike {
     host: redisUrl.hostname,
     port: Number(redisUrl.port || "6379"),
     password: redisUrl.password || undefined,
+    tls: redisUrl.protocol === "rediss:" ? {} : undefined,
   };
   const queue = new Queue(name, { connection });
   return {
