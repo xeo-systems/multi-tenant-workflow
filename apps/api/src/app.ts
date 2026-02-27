@@ -14,10 +14,13 @@ import { billingRoutes } from "./routes/billing";
 import { adminRoutes } from "./routes/admin";
 import { dataRoutes } from "./routes/data";
 import { auditRoutes } from "./routes/audit";
+import { scimRoutes } from "./routes/scim";
 import { recordUsage } from "./middleware/usage";
 import crypto from "crypto";
 import { ZodError } from "zod";
 import { checkDbReady, checkRedisReady } from "./lib/readiness";
+import { prisma } from "./lib/prisma";
+import { closeQueues } from "./lib/queue";
 
 export function buildApp() {
   const env = loadEnv();
@@ -73,6 +76,10 @@ export function buildApp() {
     }
   });
 
+  app.addHook("onClose", async () => {
+    await Promise.allSettled([prisma.$disconnect(), closeQueues()]);
+  });
+
   app.get("/health", async () => ({ status: "ok" }));
   app.get("/ready", async (request) => {
     try {
@@ -92,11 +99,13 @@ export function buildApp() {
   app.register(billingRoutes, { prefix: "/billing" });
   app.register(adminRoutes, { prefix: "/admin" });
   app.register(auditRoutes, { prefix: "/audit" });
+  app.register(scimRoutes, { prefix: "/scim/v2" });
   app.register(dataRoutes, { prefix: "/data" });
 
   app.setErrorHandler(async (error, request, reply) => {
-    if (error instanceof ZodError) {
-      const issue = error.issues[0];
+    const zodError = getZodError(error);
+    if (zodError) {
+      const issue = zodError.issues[0];
       const field = issue?.path?.join(".") || undefined;
       reply.status(400).send({
         error: {
@@ -159,6 +168,20 @@ export function buildApp() {
   });
 
   return app;
+}
+
+function getZodError(error: unknown): ZodError | null {
+  if (error instanceof ZodError) {
+    return error;
+  }
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+  const maybe = error as { name?: unknown; issues?: unknown };
+  if (maybe.name !== "ZodError" || !Array.isArray(maybe.issues)) {
+    return null;
+  }
+  return error as ZodError;
 }
 
 declare module "fastify" {
