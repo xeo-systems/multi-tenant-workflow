@@ -3,9 +3,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "pnpm --filter @saas/shared build && next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "pnpm --filter @saas/shared build && tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
