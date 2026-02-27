@@ -20,8 +20,10 @@ const ScimPatchUserSchema = z.object({
 });
 
 export async function scimRoutes(app: FastifyInstance) {
+  const scimBearerToken = getScimBearerToken(app);
+
   app.get("/Users", async (request) => {
-    requireScimToken(request, app.env.SCIM_BEARER_TOKEN);
+    requireScimToken(request, scimBearerToken);
     const orgId = getOrgId(request);
     const query = parseScimQuery(request.query as Record<string, unknown> | undefined);
 
@@ -56,7 +58,7 @@ export async function scimRoutes(app: FastifyInstance) {
   });
 
   app.post("/Users", async (request, reply) => {
-    requireScimToken(request, app.env.SCIM_BEARER_TOKEN);
+    requireScimToken(request, scimBearerToken);
     const orgId = getOrgId(request);
     const input = ScimCreateUserSchema.parse(request.body);
     const role = normalizeRole(input.roles?.[0]?.value);
@@ -89,7 +91,7 @@ export async function scimRoutes(app: FastifyInstance) {
   });
 
   app.patch("/Users/:id", async (request) => {
-    requireScimToken(request, app.env.SCIM_BEARER_TOKEN);
+    requireScimToken(request, scimBearerToken);
     const orgId = getOrgId(request);
     const { id } = request.params as { id: string };
     const input = ScimPatchUserSchema.parse(request.body);
@@ -130,7 +132,7 @@ export async function scimRoutes(app: FastifyInstance) {
   });
 
   app.delete("/Users/:id", async (request) => {
-    requireScimToken(request, app.env.SCIM_BEARER_TOKEN);
+    requireScimToken(request, scimBearerToken);
     const orgId = getOrgId(request);
     const { id } = request.params as { id: string };
     await prisma.membership.deleteMany({ where: { orgId, userId: id } });
@@ -144,6 +146,10 @@ export async function scimRoutes(app: FastifyInstance) {
     });
     return { ok: true };
   });
+}
+
+function getScimBearerToken(app: FastifyInstance): string | null | undefined {
+  return (app.env as { SCIM_BEARER_TOKEN?: string | null }).SCIM_BEARER_TOKEN;
 }
 
 function requireScimToken(request: FastifyRequest, expected?: string | null) {
