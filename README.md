@@ -28,6 +28,7 @@ Data model highlights:
 Related docs:
 - [Architecture](docs/architecture.md)
 - [Product Flow](docs/product-flow.md)
+- [Demo Guide](docs/demo.md)
 
 ## Features
 - Org and RBAC (OWNER, ADMIN, MEMBER, BILLING, READONLY)
@@ -59,7 +60,7 @@ Change ports via `apps/web` (Next.js) and `API_PORT` in `.env`.
 
 Seed user:
 - Email: `owner@example.com`
-- Password: `password123`
+- Password: `password123` (local development seed only; change/remove for non-local environments)
 
 ## Configuration
 Copy `.env.example` to `.env` and fill values.
@@ -68,14 +69,21 @@ Copy `.env.example` to `.env` and fill values.
 - `DATABASE_URL`: Postgres connection string
 - `REDIS_URL`: Redis connection string
 - `SESSION_SECRET`: >= 32 chars; used to sign session cookies
+- `SESSION_TTL_DAYS`: Absolute session lifetime in days
+- `SESSION_IDLE_TIMEOUT_HOURS`: Idle timeout window in hours
+- `SESSION_SLIDING_ENABLED`: Refresh idle expiry on activity (`true`/`false`)
+- `SESSION_MAX_PER_USER`: Maximum active sessions per user (oldest sessions evicted)
 - `API_BASE_URL`: Public API base URL
 - `WEB_BASE_URL`: Public web base URL
+- `AUTH_PROVIDER`: `local` (default). `oidc`/`saml` reserved for enterprise SSO integration.
 - `API_PORT`: Port for Fastify
 - `COOKIE_DOMAIN`: Optional cookie domain
 - `COOKIE_SECURE`: `true` for HTTPS
 - `INTERNAL_ADMIN_TOKEN`: Bearer token for internal org summary endpoint
+- `SCIM_BEARER_TOKEN`: Bearer token for SCIM provisioning endpoints (`/scim/v2/*`)
 - `LOG_LEVEL`: `info`, `debug`, etc
 - `SENTRY_ENABLED` + `SENTRY_DSN`: Optional Sentry
+- `DEMO_MODE`: `true` to enable demo-safe limits and disable destructive actions
 - `STRIPE_SECRET_KEY`: Stripe secret key (test or live)
 - `STRIPE_WEBHOOK_SECRET`: Stripe webhook signing secret
 - `STRIPE_PRICE_ID`: Stripe price for subscription checkout
@@ -84,6 +92,12 @@ Copy `.env.example` to `.env` and fill values.
 - `STRIPE_PORTAL_RETURN_URL`: Return URL for billing portal
 - `STRIPE_WEBHOOK_TOLERANCE`: Seconds for signature timestamp tolerance
 - `API_KEY_RATE_LIMIT`: Requests per minute per API key
+- `API_KEY_RATE_LIMIT_WINDOW_SEC`: API key rate limit window in seconds
+- `AUTH_RATE_LIMIT_WINDOW_SEC`: Auth rate limit window in seconds
+- `AUTH_LOGIN_IP_RATE_LIMIT`: Max login attempts per IP per window
+- `AUTH_LOGIN_IDENTIFIER_RATE_LIMIT`: Max login attempts per email/user identifier per window
+- `AUTH_REGISTER_IP_RATE_LIMIT`: Max registration attempts per IP per window
+- `AUDIT_LOG_RETENTION_DAYS`: Retain audit logs for this many days (default `365`)
 
 Session/cookie security notes:
 - Session cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, and `Secure` in production.
@@ -98,19 +112,21 @@ Session/cookie security notes:
 
 ### Web (`apps/web`)
 - `NEXT_PUBLIC_API_BASE_URL`: API base URL used by the browser
+- `NEXT_PUBLIC_DEMO_MODE`: `true` to show the demo banner and disable destructive UI actions
+- `INTERNAL_ADMIN_TOKEN`: Server-side token used by `/app/support` proxy to call internal admin summary endpoint; required for Support page summary features (otherwise `/app/api/support/org-summary` returns `503 NOT_CONFIGURED`)
 
 ## Core Workflows
 ### Register and login
 ```bash
 curl -c cookie.txt -X POST http://localhost:4000/auth/register \
   -H "Content-Type: application/json" \
-  --data '{"email":"demo@example.com","password":"password123","orgName":"Demo Org"}'
+  --data '{"email":"demo@example.com","password":"StrongPass1!","orgName":"Demo Org"}'
 ```
 
 ```bash
 curl -b cookie.txt -c cookie.txt -X POST http://localhost:4000/auth/login \
   -H "Content-Type: application/json" \
-  --data '{"email":"demo@example.com","password":"password123"}'
+  --data '{"email":"demo@example.com","password":"StrongPass1!"}'
 ```
 
 ### Create org / tenant resolution
@@ -191,6 +207,14 @@ pnpm db:migrate
 - Stripe webhook signature verification uses the raw body + timestamp tolerance.
 - Webhooks are idempotent via `stripe_events`.
 - Internal support summary endpoint: `GET /admin/orgs/:orgId/summary` with `Authorization: Bearer $INTERNAL_ADMIN_TOKEN`.
+- Audit logs can be exported from `GET /audit?format=csv|json&limit=...` (OWNER/ADMIN only).
+- Audit logs support filters: `action`, `actorUserId`, `targetType`, `from`, `to`.
+- SCIM v2 user provisioning endpoints:
+  - `GET /scim/v2/Users`
+  - `POST /scim/v2/Users`
+  - `PATCH /scim/v2/Users/:id`
+  - `DELETE /scim/v2/Users/:id`
+  Requires `Authorization: Bearer $SCIM_BEARER_TOKEN` and `X-Org-Id`.
 
 ## Demo Flow
 1. Register at `/register` to create a new org and owner user.
