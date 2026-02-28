@@ -25,11 +25,18 @@ export async function authRoutes(app: FastifyInstance) {
       throw new AppError("UNAUTHORIZED", 401, "Invalid session");
     }
 
+    const membership = await prisma.membership.findFirst({
+      where: { userId: session.user.id },
+      orderBy: { createdAt: "asc" },
+      select: { orgId: true },
+    });
+
     return {
       user: {
         id: session.user.id,
         email: session.user.email,
       },
+      orgId: membership?.orgId || null,
     };
   });
 

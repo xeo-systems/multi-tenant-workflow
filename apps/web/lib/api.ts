@@ -12,6 +12,7 @@ export type ApiErrorKind = "unauthorized" | "forbidden" | "network" | "unknown";
 
 const baseUrl = process.env["NEXT_PUBLIC_API_BASE_URL"] || "http://localhost:4000";
 const REQUEST_TIMEOUT_MS = 15000;
+let pendingOrgResolution: Promise<string | null> | null = null;
 export const ORG_ID_STORAGE_KEY = "orgId";
 export const DASHBOARD_CHECKLIST_DISMISSED_KEY = "dashboardChecklistDismissed";
 export const ORG_CONTEXT_UPDATED_EVENT = "org-context-updated";
@@ -87,7 +88,10 @@ export function getApiErrorKind(error: unknown): ApiErrorKind {
 
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const { skipOrgHeader = false, ...requestOptions } = options;
-  const orgId = getStoredOrgId();
+  let orgId = getStoredOrgId();
+  if (!skipOrgHeader && !orgId) {
+    orgId = await resolveOrgIdFromSession();
+  }
   const headers = new Headers(requestOptions.headers || {});
   if (!headers.has("Content-Type") && !(requestOptions.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
@@ -136,4 +140,40 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   }
 
   return (await res.json()) as T;
+}
+
+async function resolveOrgIdFromSession(): Promise<string | null> {
+  if (pendingOrgResolution) {
+    return pendingOrgResolution;
+  }
+
+  pendingOrgResolution = (async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Math.min(REQUEST_TIMEOUT_MS, 8000));
+    try {
+      const res = await fetch(`${baseUrl}/auth/me`, {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        return null;
+      }
+      const data = (await res.json().catch(() => null)) as { orgId?: string | null } | null;
+      const orgId = data?.orgId?.trim();
+      if (orgId) {
+        setStoredOrgId(orgId);
+        return orgId;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+      pendingOrgResolution = null;
+    }
+  })();
+
+  return pendingOrgResolution;
 }
