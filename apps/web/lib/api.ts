@@ -132,12 +132,6 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
       requestId: data?.error?.requestId,
       status: res.status,
     };
-    if (typeof window !== "undefined" && err.status === 401) {
-      const path = window.location.pathname;
-      if (!path.startsWith("/login") && !path.startsWith("/register")) {
-        window.location.href = "/login";
-      }
-    }
     throw err;
   }
 
