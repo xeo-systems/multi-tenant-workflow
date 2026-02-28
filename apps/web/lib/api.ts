@@ -11,6 +11,7 @@ export type ApiError = {
 export type ApiErrorKind = "unauthorized" | "forbidden" | "network" | "unknown";
 
 const baseUrl = process.env["NEXT_PUBLIC_API_BASE_URL"] || "http://localhost:4000";
+const REQUEST_TIMEOUT_MS = 15000;
 export const ORG_ID_STORAGE_KEY = "orgId";
 export const DASHBOARD_CHECKLIST_DISMISSED_KEY = "dashboardChecklistDismissed";
 export const ORG_CONTEXT_UPDATED_EVENT = "org-context-updated";
@@ -96,20 +97,30 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   }
 
   let res: Response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     res = await fetch(`${baseUrl}${path}`, {
       ...requestOptions,
       headers,
       credentials: "include",
+      signal: controller.signal,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Network request failed";
+    const message =
+      error instanceof Error && error.name === "AbortError"
+        ? `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`
+        : error instanceof Error
+          ? error.message
+          : "Network request failed";
     const err: ApiError = {
       code: "NETWORK_ERROR",
       message: `${message}. Unable to reach API at ${baseUrl}.`,
       status: 0,
     };
     throw err;
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!res.ok) {
