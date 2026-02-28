@@ -6,9 +6,10 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { RegisterFormSchema } from "@/lib/validators";
-import { apiFetch, ApiError, setStoredOrgId } from "@/lib/api";
+import { apiFetch, ApiError, setStoredOrgId, setStoredSessionToken } from "@/lib/api";
 import { useToast } from "@/lib/toast";
 
 export default function RegisterPage() {
@@ -39,12 +40,15 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      const data = await apiFetch<{ orgId: string; userId: string }>("/auth/register", {
+      const data = await apiFetch<{ orgId: string; userId: string; sessionToken?: string }>("/auth/register", {
         method: "POST",
         skipOrgHeader: true,
         body: JSON.stringify(parsed.data),
       });
       setStoredOrgId(data.orgId);
+      if (data.sessionToken) {
+        setStoredSessionToken(data.sessionToken);
+      }
       push({ title: "Account created", description: "Welcome to your new org." });
       router.push("/app");
     } catch (err) {
@@ -106,10 +110,9 @@ export default function RegisterPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input
+                <PasswordInput
                   id="password"
                   name="password"
-                  type="password"
                   autoComplete="new-password"
                   aria-invalid={Boolean(errors["password"])}
                   aria-describedby={errors["password"] ? "password-error" : undefined}

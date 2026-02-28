@@ -14,6 +14,7 @@ const baseUrl = process.env["NEXT_PUBLIC_API_BASE_URL"] || "http://localhost:400
 const REQUEST_TIMEOUT_MS = 15000;
 let pendingOrgResolution: Promise<string | null> | null = null;
 export const ORG_ID_STORAGE_KEY = "orgId";
+export const SESSION_TOKEN_STORAGE_KEY = "sessionToken";
 export const DASHBOARD_CHECKLIST_DISMISSED_KEY = "dashboardChecklistDismissed";
 export const ORG_CONTEXT_UPDATED_EVENT = "org-context-updated";
 
@@ -42,6 +43,27 @@ export function clearStoredOrgId() {
   }
   window.localStorage.removeItem(ORG_ID_STORAGE_KEY);
   window.dispatchEvent(new Event(ORG_CONTEXT_UPDATED_EVENT));
+}
+
+export function getStoredSessionToken(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return window.localStorage.getItem(SESSION_TOKEN_STORAGE_KEY);
+}
+
+export function setStoredSessionToken(token: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(SESSION_TOKEN_STORAGE_KEY, token);
+}
+
+export function clearStoredSessionToken() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.removeItem(SESSION_TOKEN_STORAGE_KEY);
 }
 
 export function isApiError(error: unknown): error is ApiError {
@@ -95,6 +117,10 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   const headers = new Headers(requestOptions.headers || {});
   if (!headers.has("Content-Type") && !(requestOptions.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
+  }
+  const sessionToken = getStoredSessionToken();
+  if (sessionToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${sessionToken}`);
   }
   if (!skipOrgHeader && orgId && !headers.has("X-Org-Id")) {
     headers.set("X-Org-Id", orgId);

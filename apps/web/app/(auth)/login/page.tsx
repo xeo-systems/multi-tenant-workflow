@@ -6,9 +6,10 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { LoginFormSchema } from "@/lib/validators";
-import { apiFetch, ApiError, setStoredOrgId } from "@/lib/api";
+import { apiFetch, ApiError, setStoredOrgId, setStoredSessionToken } from "@/lib/api";
 import { useToast } from "@/lib/toast";
 
 export default function LoginPage() {
@@ -38,12 +39,15 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const data = await apiFetch<{ userId: string; orgId: string }>("/auth/login", {
+      const data = await apiFetch<{ userId: string; orgId: string; sessionToken?: string }>("/auth/login", {
         method: "POST",
         skipOrgHeader: true,
         body: JSON.stringify(parsed.data),
       });
       setStoredOrgId(data.orgId);
+      if (data.sessionToken) {
+        setStoredSessionToken(data.sessionToken);
+      }
       push({ title: "Welcome back", description: "Login successful." });
       router.push("/app");
     } catch (err) {
@@ -89,10 +93,9 @@ export default function LoginPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input
+                <PasswordInput
                   id="password"
                   name="password"
-                  type="password"
                   autoComplete="current-password"
                   aria-invalid={Boolean(errors["password"])}
                   aria-describedby={errors["password"] ? "password-error" : undefined}

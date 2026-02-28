@@ -7,11 +7,12 @@ import { enforceRateLimit, normalizeIdentifier } from "../middleware/rateLimit";
 import { writeAudit } from "../services/audit";
 import { createAuthProvider } from "../services/authProvider";
 import { isDemoMode } from "../lib/demo";
+import { readSessionToken } from "../middleware/auth";
 
 export async function authRoutes(app: FastifyInstance) {
   const authProvider = createAuthProvider(app.env.AUTH_PROVIDER);
   app.get("/me", async (request) => {
-    const sessionToken = request.cookies["sid"] as string | undefined;
+    const sessionToken = readSessionToken(request);
     if (!sessionToken) {
       throw new AppError("UNAUTHORIZED", 401, "Missing session");
     }
@@ -63,7 +64,7 @@ export async function authRoutes(app: FastifyInstance) {
     const sessionToken = await createSession(userId, app);
     setSessionCookie(reply, sessionToken, app);
 
-    reply.status(201).send({ orgId, userId });
+    reply.status(201).send({ orgId, userId, sessionToken });
   });
 
   app.post("/login", async (request, reply) => {
@@ -90,7 +91,7 @@ export async function authRoutes(app: FastifyInstance) {
         result.userId
       );
 
-      reply.send({ userId: result.userId, orgId: result.orgId });
+      reply.send({ userId: result.userId, orgId: result.orgId, sessionToken });
       return;
     } catch (error) {
       if (!(error instanceof AppError) || error.code !== "UNAUTHORIZED") {
@@ -123,7 +124,7 @@ export async function authRoutes(app: FastifyInstance) {
 
   app.post("/logout", async (request, reply) => {
     try {
-      const sessionToken = request.cookies["sid"] as string | undefined;
+      const sessionToken = readSessionToken(request);
       if (sessionToken) {
         try {
           const tokenHash = sha256(sessionToken);
@@ -180,7 +181,7 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.post("/logout-all", async (request, reply) => {
-    const sessionToken = request.cookies["sid"] as string | undefined;
+    const sessionToken = readSessionToken(request);
     if (!sessionToken) {
       throw new AppError("UNAUTHORIZED", 401, "Missing session");
     }
