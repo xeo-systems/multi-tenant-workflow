@@ -16,12 +16,15 @@ import {
 import { OrgSwitcher } from "@/components/org-switcher";
 import { UserMenu } from "@/components/user-menu";
 
+const isDemoMode = process.env["NEXT_PUBLIC_DEMO_MODE"] === "true";
+
 const navItems = [
   { label: "Dashboard", href: "/app" },
   { label: "Members", href: "/app/members" },
   { label: "API Keys", href: "/app/api-keys" },
   { label: "Usage", href: "/app/usage" },
   { label: "Billing", href: "/app/billing" },
+  { label: "Support", href: "/app/support" },
   { label: "Settings", href: "/app/settings" },
 ];
 
@@ -121,7 +124,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur">
+      {isDemoMode && (
+        <div className="border-b border-amber-200 bg-amber-50 text-amber-900">
+          <div className="container-page py-2 text-xs font-semibold tracking-wide">Demo mode (limited)</div>
+        </div>
+      )}
+      <header className="sticky top-0 z-40 border-b border-border bg-card shadow-sm">
         <div className="container-page flex min-h-[72px] items-center justify-between gap-4 py-4">
           <div className="flex items-center gap-4">
             <Button
@@ -143,7 +151,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {orgSummary?.org.id || localOrgId || orgSummaryHint || "Set an org ID in settings"}
               </p>
               {orgSummaryHint && localOrgId && !orgSummary?.org.id && (
-                <p className="truncate text-xs text-red-600">{orgSummaryHint}</p>
+                <p className="truncate text-xs text-error">{orgSummaryHint}</p>
               )}
             </div>
             <Badge className="hidden md:inline-flex capitalize" variant="secondary">
@@ -189,7 +197,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             })}
           </nav>
         </aside>
-        <main className="min-w-0 flex-1" role="main">
+        <main className="min-w-0 flex-1 pt-2 md:pt-0" role="main">
           <div className="flex items-center justify-between gap-2 md:hidden">
             <OrgSwitcher />
             <UserMenu />
