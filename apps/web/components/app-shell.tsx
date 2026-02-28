@@ -24,7 +24,6 @@ const navItems = [
   { label: "API Keys", href: "/app/api-keys" },
   { label: "Usage", href: "/app/usage" },
   { label: "Billing", href: "/app/billing" },
-  { label: "Support", href: "/app/support" },
   { label: "Settings", href: "/app/settings" },
 ];
 
@@ -167,14 +166,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="container-page flex gap-6 py-8">
         {open && (
           <button
-            className="fixed inset-0 z-30 bg-black/30 md:hidden"
+            className="fixed inset-0 z-20 bg-black/30 md:hidden"
             aria-label="Close navigation"
             onClick={() => setOpen(false)}
           />
         )}
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-40 w-[85vw] max-w-[320px] border-r border-border bg-card p-4 pt-24 transition-transform md:static md:inset-y-0 md:w-64 md:max-w-none md:translate-x-0 md:rounded-lg md:border md:border-border md:pt-4",
+            "fixed bottom-0 left-0 top-[72px] z-30 w-[85vw] max-w-[320px] border-r border-border bg-card p-4 transition-transform md:static md:inset-y-0 md:w-64 md:max-w-none md:translate-x-0 md:rounded-lg md:border md:border-border md:pt-4",
             open ? "translate-x-0" : "-translate-x-full"
           )}
         >
