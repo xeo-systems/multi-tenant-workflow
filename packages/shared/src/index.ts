@@ -36,3 +36,4 @@ export const UsageEventSchema = z.object({
 
 export type Role = z.infer<typeof RoleSchema>;
 export { emailSchema, passwordSchema, orgNameSchema, apiKeyNameSchema };
+export * from "./permissions";

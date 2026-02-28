@@ -2,11 +2,20 @@ import { Role } from "@saas/db";
 import { prisma } from "../lib/prisma";
 import { AppError } from "../lib/errors";
 import { TenantContext } from "../lib/tenant";
+import { hasPermission } from "@saas/shared";
+import type { Permission } from "@saas/shared";
 
 export async function requireOrgRole(ctx: TenantContext, allowed: Role[]) {
   const role = await resolveRole(ctx);
   if (!allowed.includes(role)) {
     throw new AppError("FORBIDDEN", 403, "Insufficient role");
+  }
+}
+
+export async function requireOrgPermission(ctx: TenantContext, permission: Permission) {
+  const role = await resolveRole(ctx);
+  if (!hasPermission(role, permission)) {
+    throw new AppError("FORBIDDEN", 403, "Insufficient permission");
   }
 }
 

@@ -3,7 +3,8 @@ import { prisma } from "../lib/prisma";
 import { sha256 } from "../lib/crypto";
 import { AppError } from "../lib/errors";
 import { Role } from "@saas/db";
-import { hasPermission, Permission } from "@saas/shared";
+import { hasPermission } from "@saas/shared";
+import type { Permission } from "@saas/shared";
 
 export type AuthContext = {
   userId: string;
