@@ -52,13 +52,22 @@ export async function requireUser(request: FastifyRequest) {
     }
   }
 
-  const orgId = getOrgId(request);
-  const membership = await prisma.membership.findUnique({
-    where: { orgId_userId: { orgId, userId: session.userId } },
-  });
+  const requestedOrgId = readOrgIdHeader(request);
+  const membership = requestedOrgId
+    ? await prisma.membership.findUnique({
+        where: { orgId_userId: { orgId: requestedOrgId, userId: session.userId } },
+      })
+    : await prisma.membership.findFirst({
+        where: { userId: session.userId },
+        orderBy: { createdAt: "asc" },
+      });
 
   if (!membership) {
-    request.log.warn({ reason: "missing_membership", userId: session.userId, orgId }, "Auth failed");
+    if (!requestedOrgId) {
+      request.log.warn({ reason: "missing_default_membership", userId: session.userId }, "Auth failed");
+      throw new AppError("FORBIDDEN", 403, "No organization membership found");
+    }
+    request.log.warn({ reason: "missing_membership", userId: session.userId, orgId: requestedOrgId }, "Auth failed");
     throw new AppError("FORBIDDEN", 403, "Not a member of this organization");
   }
 
@@ -66,9 +75,9 @@ export async function requireUser(request: FastifyRequest) {
     userId: session.userId,
     email: session.user.email,
     role: membership.role,
-    orgId,
+    orgId: membership.orgId,
   };
-  request.log = request.log.child({ orgId, userId: session.userId, role: membership.role });
+  request.log = request.log.child({ orgId: membership.orgId, userId: session.userId, role: membership.role });
 }
 
 export function readSessionToken(request: FastifyRequest): string | undefined {
@@ -112,11 +121,15 @@ export async function requirePermission(request: FastifyRequest, permission: Per
 }
 
 export function getOrgId(request: FastifyRequest) {
-  const orgId = request.headers["x-org-id"] as string | undefined;
+  const orgId = readOrgIdHeader(request);
   if (!orgId) {
     throw new AppError("BAD_REQUEST", 400, "Missing X-Org-Id header");
   }
   return orgId;
+}
+
+function readOrgIdHeader(request: FastifyRequest) {
+  return request.headers["x-org-id"] as string | undefined;
 }
 
 declare module "fastify" {
