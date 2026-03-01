@@ -4,7 +4,7 @@ import { prisma } from "../lib/prisma";
 import { AppError } from "../lib/errors";
 import { requireRole, requireUser } from "../middleware/auth";
 import { enforceUsageLimit } from "../middleware/usage";
-import { stripeQueue } from "../lib/queue";
+import { buildRetryJobOptions, stripeQueue } from "../lib/queue";
 import { writeAudit } from "../services/audit";
 
 export async function billingRoutes(app: FastifyInstance) {
@@ -162,7 +162,7 @@ export async function billingRoutes(app: FastifyInstance) {
         },
       });
 
-      await stripeQueue.add("stripe-event", { event }, { jobId: event.id });
+      await stripeQueue.add("stripe-event", { event }, buildRetryJobOptions({ jobId: event.id }));
     } catch (err) {
       request.log.error({ err, stripeId: event.id }, "Failed to enqueue Stripe event");
       await prisma.stripeEvent.deleteMany({ where: { stripeId: event.id } });

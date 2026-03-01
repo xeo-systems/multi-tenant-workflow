@@ -8,6 +8,13 @@ type QueueLike = {
 };
 
 const env = loadEnv();
+const QUEUE_JOB_ATTEMPTS = readPositiveInt(env.QUEUE_JOB_ATTEMPTS, 5);
+const QUEUE_BACKOFF_DELAY_MS = readPositiveInt(env.QUEUE_BACKOFF_DELAY_MS, 2000);
+
+export const QUEUE_RETRY_DEFAULTS = {
+  attempts: QUEUE_JOB_ATTEMPTS,
+  backoffDelayMs: QUEUE_BACKOFF_DELAY_MS,
+} as const;
 
 function createQueue(name: string): QueueLike {
   if (env.NODE_ENV === "test") {
@@ -44,4 +51,25 @@ export async function pingRedis() {
 
 export async function closeQueues() {
   await Promise.all([stripeQueue.close(), usageQueue.close()]);
+}
+
+export function buildRetryJobOptions(opts: JobsOptions = {}): JobsOptions {
+  return {
+    attempts: QUEUE_JOB_ATTEMPTS,
+    backoff: {
+      type: "exponential",
+      delay: QUEUE_BACKOFF_DELAY_MS,
+    },
+    removeOnComplete: 1000,
+    removeOnFail: false,
+    ...opts,
+  };
+}
+
+function readPositiveInt(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.floor(parsed);
 }

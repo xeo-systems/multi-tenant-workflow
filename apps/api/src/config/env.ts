@@ -48,6 +48,8 @@ const EnvSchema = z.object({
   STRIPE_PORTAL_RETURN_URL: z.string().optional().nullable(),
   STRIPE_WEBHOOK_TOLERANCE: z.string().default("300"),
   WORKER_CONCURRENCY: z.string().default("5"),
+  QUEUE_JOB_ATTEMPTS: z.string().default("5"),
+  QUEUE_BACKOFF_DELAY_MS: z.string().default("2000"),
   API_KEY_RATE_LIMIT: z.string().default("1000"),
   API_KEY_RATE_LIMIT_WINDOW_SEC: z.string().default("60"),
   AUTH_RATE_LIMIT_WINDOW_SEC: z.string().default("60"),

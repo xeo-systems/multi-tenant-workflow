@@ -10,6 +10,7 @@ import bcrypt from "bcryptjs";
 import { apiKeyNameSchema, emailSchema, orgNameSchema, passwordSchema } from "@saas/shared";
 import { resetRateLimitStore } from "../src/middleware/rateLimit";
 import * as readiness from "../src/lib/readiness";
+import { QUEUE_RETRY_DEFAULTS, stripeQueue } from "../src/lib/queue";
 
 const stripe = new Stripe("sk_test_123", { apiVersion: "2023-10-16" });
 
@@ -326,6 +327,47 @@ describe("security headers", () => {
 });
 
 describe("webhook idempotency", () => {
+  it("enqueues stripe jobs with retry/backoff policy", async () => {
+    const addSpy = vi.spyOn(stripeQueue, "add").mockResolvedValue(undefined as any);
+    const app = buildApp();
+    const payload = fs.readFileSync(
+      path.join(__dirname, "fixtures/stripe/subscription_updated.json"),
+      "utf8"
+    );
+    const header = stripe.webhooks.generateTestHeaderString({
+      payload,
+      secret: "whsec_test",
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/billing/webhook",
+      headers: {
+        "stripe-signature": header,
+        "content-type": "application/json",
+      },
+      payload,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(addSpy).toHaveBeenCalledTimes(1);
+    expect(addSpy).toHaveBeenCalledWith(
+      "stripe-event",
+      expect.objectContaining({ event: expect.objectContaining({ id: "evt_test_sub_updated" }) }),
+      expect.objectContaining({
+        jobId: "evt_test_sub_updated",
+        attempts: QUEUE_RETRY_DEFAULTS.attempts,
+        backoff: {
+          type: "exponential",
+          delay: QUEUE_RETRY_DEFAULTS.backoffDelayMs,
+        },
+      })
+    );
+
+    addSpy.mockRestore();
+    await app.close();
+  });
+
   it("stores event once", async () => {
     const app = buildApp();
     const payload = fs.readFileSync(
@@ -412,6 +454,36 @@ describe("webhook idempotency", () => {
     });
 
     expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("rolls back persisted event if enqueue fails", async () => {
+    const addSpy = vi.spyOn(stripeQueue, "add").mockRejectedValue(new Error("queue unavailable"));
+    const app = buildApp();
+    const payload = fs.readFileSync(
+      path.join(__dirname, "fixtures/stripe/subscription_updated.json"),
+      "utf8"
+    );
+    const header = stripe.webhooks.generateTestHeaderString({
+      payload,
+      secret: "whsec_test",
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/billing/webhook",
+      headers: {
+        "stripe-signature": header,
+        "content-type": "application/json",
+      },
+      payload,
+    });
+
+    expect(res.statusCode).toBe(500);
+    const count = await prisma.stripeEvent.count({ where: { stripeId: "evt_test_sub_updated" } });
+    expect(count).toBe(0);
+
+    addSpy.mockRestore();
     await app.close();
   });
 });

@@ -1,4 +1,4 @@
-import { Queue, Worker, JobsOptions } from "bullmq";
+import { Queue, Worker, JobsOptions, Job } from "bullmq";
 import { config as loadDotenv } from "dotenv";
 import fs from "fs";
 import path from "path";
@@ -29,6 +29,8 @@ const EnvSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional().nullable(),
   WORKER_CONCURRENCY: z.string().default("5"),
   AUDIT_LOG_RETENTION_DAYS: z.string().default("365"),
+  QUEUE_JOB_ATTEMPTS: z.string().default("5"),
+  QUEUE_BACKOFF_DELAY_MS: z.string().default("2000"),
 });
 
 const env = EnvSchema.parse(process.env);
@@ -44,8 +46,13 @@ const connection = {
 const stripeQueue = new Queue("stripe-events", { connection });
 const usageQueue = new Queue("usage-rollups", { connection });
 const maintenanceQueue = new Queue("maintenance-jobs", { connection });
+const stripeDlq = new Queue("stripe-events-dlq", { connection });
+const usageDlq = new Queue("usage-rollups-dlq", { connection });
+const maintenanceDlq = new Queue("maintenance-jobs-dlq", { connection });
 
 const concurrency = Number(env.WORKER_CONCURRENCY || 5);
+const jobAttempts = Math.max(1, Number(env.QUEUE_JOB_ATTEMPTS || "5"));
+const backoffDelayMs = Math.max(100, Number(env.QUEUE_BACKOFF_DELAY_MS || "2000"));
 
 const stripeWorker = new Worker(
   "stripe-events",
@@ -77,11 +84,17 @@ const maintenanceWorker = new Worker(
 );
 
 void ensureRepeatable();
+wireFailureHandlers();
 
 async function ensureRepeatable() {
   const opts: JobsOptions = {
     repeat: { pattern: "0 2 * * *" },
     jobId: "daily-usage-rollup",
+    attempts: jobAttempts,
+    backoff: {
+      type: "exponential",
+      delay: backoffDelayMs,
+    },
   };
   await usageQueue.add("rollup", { }, opts);
   await maintenanceQueue.add(
@@ -90,8 +103,88 @@ async function ensureRepeatable() {
     {
       repeat: { pattern: "30 2 * * *" },
       jobId: "daily-audit-retention",
+      attempts: jobAttempts,
+      backoff: {
+        type: "exponential",
+        delay: backoffDelayMs,
+      },
     }
   );
+}
+
+function wireFailureHandlers() {
+  attachFailureHandler(stripeWorker, stripeDlq);
+  attachFailureHandler(usageWorker, usageDlq);
+  attachFailureHandler(maintenanceWorker, maintenanceDlq);
+}
+
+function attachFailureHandler(worker: Worker, dlq: Queue) {
+  worker.on("failed", async (job, err) => {
+    if (!job) {
+      console.error({
+        event: "worker.job.failed",
+        queue: worker.name,
+        error: err?.message || "Unknown worker failure",
+        attemptsMade: 0,
+        terminal: false,
+      });
+      return;
+    }
+
+    const terminal = isTerminalFailure(job);
+    console.error({
+      event: "worker.job.failed",
+      queue: worker.name,
+      jobId: String(job.id ?? "unknown"),
+      name: job.name,
+      attemptsMade: job.attemptsMade,
+      attemptsConfigured: job.opts.attempts ?? 1,
+      terminal,
+      error: err?.message || job.failedReason || "Unknown worker failure",
+    });
+
+    if (!terminal) {
+      return;
+    }
+
+    const payload = {
+      originalQueue: worker.name,
+      originalJobName: job.name,
+      originalJobId: job.id ? String(job.id) : undefined,
+      originalData: job.data,
+      originalOptions: sanitizeJobOptions(job.opts),
+      attemptsMade: job.attemptsMade,
+      failedReason: err?.message || job.failedReason || "Unknown worker failure",
+      failedAt: new Date().toISOString(),
+    };
+
+    const dlqJobId = `${worker.name}:${String(job.id ?? `noid-${Date.now()}`)}`;
+    await dlq.add("dead-letter", payload, {
+      jobId: dlqJobId,
+      removeOnComplete: 1000,
+      removeOnFail: false,
+    });
+    await job.remove();
+    console.error({
+      event: "worker.job.dead_lettered",
+      queue: worker.name,
+      dlq: dlq.name,
+      jobId: String(job.id ?? "unknown"),
+      dlqJobId,
+    });
+  });
+}
+
+function isTerminalFailure(job: Job) {
+  const attempts = job.opts.attempts ?? 1;
+  return job.attemptsMade >= attempts;
+}
+
+function sanitizeJobOptions(opts: JobsOptions): JobsOptions {
+  const next = { ...opts };
+  delete (next as any).repeat;
+  delete (next as any).delay;
+  return next;
 }
 
 async function handleStripeEvent(event: Stripe.Event) {
@@ -234,6 +327,9 @@ shutdownSignals.forEach((signal) => {
         stripeQueue.close(),
         usageQueue.close(),
         maintenanceQueue.close(),
+        stripeDlq.close(),
+        usageDlq.close(),
+        maintenanceDlq.close(),
       ]);
       await prisma.$disconnect();
       process.exit(0);
