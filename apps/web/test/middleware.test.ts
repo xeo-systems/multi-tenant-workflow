@@ -8,11 +8,11 @@ describe("app route middleware", () => {
   });
 
   it("redirects unauthenticated app requests to login", async () => {
-    const request = new NextRequest("http://localhost:3000/app");
+    const request = new NextRequest("http://localhost:4000/app");
     const response = await middleware(request);
 
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe("http://localhost:3000/login");
+    expect(response.headers.get("location")).toBe("http://localhost:4000/login");
   });
 
   it("allows authenticated app requests with valid session", async () => {
@@ -22,7 +22,7 @@ describe("app route middleware", () => {
         headers: { "content-type": "application/json" },
       })
     );
-    const request = new NextRequest("http://localhost:3000/app");
+    const request = new NextRequest("http://localhost:4000/app");
     request.cookies.set("sid", "session-token");
     const response = await middleware(request);
 
@@ -32,11 +32,19 @@ describe("app route middleware", () => {
 
   it("redirects when session cookie exists but auth check fails", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("unauthorized", { status: 401 }));
-    const request = new NextRequest("http://localhost:3000/app");
+    const request = new NextRequest("http://localhost:4000/app");
     request.cookies.set("sid", "stale-session");
     const response = await middleware(request);
 
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe("http://localhost:3000/login");
+    expect(response.headers.get("location")).toBe("http://localhost:4000/login");
+  });
+
+  it("allows cross-origin api deployments without requiring sid cookie on web origin", async () => {
+    const request = new NextRequest("http://localhost:3000/app");
+    const response = await middleware(request);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-next")).toBe("1");
   });
 });
