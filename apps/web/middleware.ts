@@ -12,9 +12,6 @@ async function handleMiddleware(request: NextRequest) {
   if (!pathname.startsWith("/app")) {
     return NextResponse.next();
   }
-  if (isCrossOriginApi(request.nextUrl.origin)) {
-    return NextResponse.next();
-  }
 
   const session = request.cookies.get("sid")?.value;
   if (!session) {
@@ -40,14 +37,6 @@ async function handleMiddleware(request: NextRequest) {
   }
 
   return NextResponse.next();
-}
-
-function isCrossOriginApi(webOrigin: string) {
-  try {
-    return new URL(apiBaseUrl).origin !== webOrigin;
-  } catch {
-    return false;
-  }
 }
 
 export const config = {

@@ -816,6 +816,7 @@ describe("session cookie security", () => {
     const prevCookieSecure = process.env["COOKIE_SECURE"];
     const prevCookieDomain = process.env["COOKIE_DOMAIN"];
     const prevSessionSecret = process.env["SESSION_SECRET"];
+    const prevApiBase = process.env["API_BASE_URL"];
     const prevStripeSecret = process.env["STRIPE_SECRET_KEY"];
     const prevStripeWebhook = process.env["STRIPE_WEBHOOK_SECRET"];
     const prevWebBase = process.env["WEB_BASE_URL"];
@@ -849,7 +850,7 @@ describe("session cookie security", () => {
       expect(cookie).toBeTruthy();
       expect(cookie).toContain("HttpOnly");
       expect(cookie).toContain("Secure");
-      expect(cookie).toContain("SameSite=Lax");
+      expect(cookie).toContain("SameSite=None");
       expect(cookie).toContain("Path=/");
       expect(cookie).toContain("Domain=example.com");
 
@@ -859,6 +860,7 @@ describe("session cookie security", () => {
       process.env["COOKIE_SECURE"] = prevCookieSecure;
       process.env["COOKIE_DOMAIN"] = prevCookieDomain;
       process.env["SESSION_SECRET"] = prevSessionSecret;
+      process.env["API_BASE_URL"] = prevApiBase;
       process.env["STRIPE_SECRET_KEY"] = prevStripeSecret;
       process.env["STRIPE_WEBHOOK_SECRET"] = prevStripeWebhook;
       process.env["WEB_BASE_URL"] = prevWebBase;
